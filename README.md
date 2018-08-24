@@ -63,6 +63,8 @@ rund supports "compiler directives" in the main source file.  Each directive lin
 //!library <library_file>
 //!importFilenamePath <path>
 //!env <var>=<value>
+//!noConfigFile
+//!betterC
 ```
 
 ### Idea

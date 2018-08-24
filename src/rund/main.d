@@ -499,7 +499,7 @@ Flag!"compile" determineCompile(bool force, Output output, string jsonFilename, 
     auto updated = deps.byKey.anyNewerThan(lastBuildTime);
     if (updated)
     {
-        yapf("COMPILE(YES) updated file %s", updated.formatQuotedIfSpaces);
+        yapf("COMPILE(YES) updated file '%s'", updated.formatQuotedIfSpaces);
         return Yes.compile;
     }
 
@@ -852,6 +852,10 @@ void getCompilerArgsFromSource(T)(T sink, string sourceFilename)
         }
         else if (command.skipOver("unittest"))
             sink.put("-unittest");
+        else if (command.skipOver("betterC"))
+            sink.put("-betterC");
+        else if (command.skipOver("noConfigFile"))
+            sink.put("-conf=");
         else throw new ReadCompilerConfigException(format(
             "unknown compiler directive `%s`", line), sourceFilename, lineno);
 

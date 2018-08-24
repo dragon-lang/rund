@@ -63,8 +63,13 @@ string[string] readJsonFile(string jsonFilename, string objDir)
             fileRebaser = FileRebaser(cwdProperty);
         }
         {
-            auto configFilename = fileRebaser.yapCorrectedPath("buildInfo.config", buildInfo["config"].str);
-            result[configFilename] = null;
+            auto configProperty = buildInfo["config"].str;
+            if (configProperty.length > 0)
+            {
+                auto configFilename = fileRebaser.yapCorrectedPath("buildInfo.config", configProperty);
+                if (configFilename.length > 0)
+                    result[configFilename] = null;
+            }
         }
         {
             auto libraryProperty = buildInfo.get("library", JSONValue.init);

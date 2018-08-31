@@ -5,8 +5,8 @@ import std.stdio : writef, writefln, writeln, stderr;
 
 import rund.common;
 
-bool chatty;
-bool dryRun;
+__gshared bool chatty;
+__gshared bool dryRun;
 
 pragma(inline) void yapf(string file = __FILE__, size_t line = __LINE__, T...)(string format, T args)
 {
@@ -74,7 +74,7 @@ struct Chatty
             enum skipOnDryRun = false;
         }
 
-        static if (fileFunc == "copy" || fileFunc == "moveFile" || fileFunc == "rename")
+        static if (fileFunc.among("copy", "moveFile", "rename"))
         {
             enum logReturn = false;
             yap!(file, line)(fileFunc, " ", args[0], " ", args[1]);

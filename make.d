@@ -101,7 +101,7 @@ int tryMain(string[] args)
 string build()
 {
     auto sourceFiles = [
-         getFilename("src", "rund", "main.d"),
+         getFilename("rund.d"),
          getFilename("src", "rund", "common.d"),
          getFilename("src", "rund", "chatty.d"),
          getFilename("src", "rund", "deps.d"),

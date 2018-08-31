@@ -1,4 +1,5 @@
 #!/usr/bin/env rund
+//!importPath src
 /*
  *  Copyright (C) 2008 by Andrei Alexandrescu
  *
@@ -12,6 +13,7 @@
  *    (See accompanying file LICENSE_1_0.txt or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
+module __none;
 
 // TODO: limit number of cached entries in the cache directory
 // TODO: maybe provide an option to clean the cache?
@@ -166,7 +168,7 @@ int main(string[] args)
             auto otherRund = buildPath(compilerDir, "rund" ~ binExt);
             if (otherRund.exists && otherRund.isFile)
             {
-                yap("forwarding call to '%s'", otherRund);
+                yapf("forwarding call to '%s'", otherRund);
                 auto process = spawnProcess(otherRund ~ args[1..$]);
                 return process.wait();
             }
@@ -465,7 +467,7 @@ Flag!"compile" determineCompile(bool force, Output output, string jsonFilename, 
     SysTime lastBuildTime = Chatty.timeLastModified(output.file, SysTime.min);
     if (lastBuildTime == SysTime.min)
     {
-        yap("COMPILE(YES) ouptut file %s does not exist", output.file.formatQuotedIfSpaces);
+        yapf("COMPILE(YES) ouptut file %s does not exist", output.file.formatQuotedIfSpaces);
         return Yes.compile;
     }
     if (output.buildWitness)
@@ -473,7 +475,7 @@ Flag!"compile" determineCompile(bool force, Output output, string jsonFilename, 
         auto buildWitnessTime = Chatty.timeLastModified(output.buildWitness, SysTime.min);
         if (lastBuildTime == SysTime.min)
         {
-            yap("COMPILE(YES) build witness %s does not exist", output.buildWitness.formatQuotedIfSpaces);
+            yapf("COMPILE(YES) build witness %s does not exist", output.buildWitness.formatQuotedIfSpaces);
             return Yes.compile;
         }
         // If output.file is newer than output.buildWitness, then that means that the output file has been changed/overwritten.
@@ -481,7 +483,7 @@ Flag!"compile" determineCompile(bool force, Output output, string jsonFilename, 
         // arguments but with the same output file name.
         if (lastBuildTime > buildWitnessTime)
         {
-            yap("COMPILE(YES) build witness %s is older than output file", output.buildWitness.formatQuotedIfSpaces);
+            yapf("COMPILE(YES) build witness %s is older than output file", output.buildWitness.formatQuotedIfSpaces);
             return Yes.compile;
         }
         lastBuildTime = buildWitnessTime;
@@ -490,7 +492,7 @@ Flag!"compile" determineCompile(bool force, Output output, string jsonFilename, 
     auto jsonFileModifyTime = Chatty.timeLastModified(jsonFilename, SysTime.min);
     if (jsonFileModifyTime == SysTime.min)
     {
-        yap("COMPILE(YES) json file %s does not exist", jsonFilename.formatQuotedIfSpaces);
+        yapf("COMPILE(YES) json file %s does not exist", jsonFilename.formatQuotedIfSpaces);
         return Yes.compile;
     }
     // TODO: what happens if json modify time is different from outputFileTime and/or build witness time?

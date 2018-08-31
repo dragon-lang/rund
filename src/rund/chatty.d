@@ -4,6 +4,7 @@ import std.format : format;
 import std.stdio : writef, writefln, writeln, stderr;
 
 import rund.common;
+import rund.filerebaser : FileRebaser;
 
 __gshared bool chatty;
 __gshared bool dryRun;
@@ -48,6 +49,16 @@ Returns true if `name` exists and is a file.
 private bool existsAsFile(string name)
 {
     return getFileAttributes(name).isFile;
+}
+
+/**
+Get the corrected path from `rebaser` but yap the result.
+*/
+string yapCorrectedPath(FileRebaser rebaser, string logName, string path)
+{
+    auto result = rebaser.correctedPath(path);
+    yapf("%s %s => %s", logName, path.formatQuotedIfSpaces, result.formatQuotedIfSpaces);
+    return result;
 }
 
 /**

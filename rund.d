@@ -26,7 +26,7 @@ import std.algorithm : canFind, map, skipOver, splitter;
 import std.range : chain, only;
 import std.array : array, appender;
 static import std.string;
-import std.string : startsWith, endsWith, toStringz, representation, join, indexOf, lastIndexOf, replace;
+import std.string : startsWith, endsWith, toStringz, representation, join, lastIndexOf, replace;
 import std.format : format;
 import std.digest.md : MD5, toHexString;
 import std.path : buildPath, buildNormalizedPath, dirName, baseName, isAbsolute, pathSeparator, dirSeparator, absolutePath;
@@ -41,6 +41,7 @@ import std.stdio : stderr, stdout, stdin,
 import rund.common;
 import rund.chatty;
 import rund.deps;
+import rund.directives;
 
 private string cacheDirOverride;
 
@@ -241,7 +242,7 @@ int main(string[] args)
 
     {
         auto builder = appender!(string[])();
-        getCompilerArgsFromSource(builder, mainSource);
+        processDirectivesFromFile(builder, mainSource);
         if (builder.data.length == 0)
             allCompilerArgs = compilerArgsFromCommandLine;
         else
@@ -801,73 +802,4 @@ inout(char)[] defaultExtension(inout(char)[] path, const(char)[] ext)
     if (dotIndex < 0)
         return cast(inout(char)[])(path ~ ext);
     return path;
-}
-
-
-class ReadCompilerConfigException : Exception
-{
-    this(string msg, string file, size_t line, Exception inner = null)
-    {
-        super(msg, file, line, inner);
-    }
-}
-// TODO: maybe this should be in another file so it could be reused
-//       by other tools.  This might be something that the compiler may want.
-/**
-Returns:
-    null on success, error message on error
-*/
-void getCompilerArgsFromSource(T)(T sink, string sourceFilename)
-{
-    auto args = appender!(string[])();
-    auto sourceFile = File(sourceFilename, "r");
-    auto line = sourceFile.readln().stripNewline;
-    size_t lineno = 1;
-    auto fileRebaser = FileRebaser(sourceFilename.dirName);
-
-    // skip shebang line
-    if (line.startsWith("#!"))
-    {
-        line = sourceFile.readln().stripNewline;
-        lineno++;
-    }
-    for (;;)
-    {
-        auto command = line;
-        if (!command.skipOver("//!"))
-            return;
-
-        if (command.skipOver("importPath "))
-            sink.put("-I=" ~ fileRebaser.correctedPath(command));
-        else if (command.skipOver("importFilenamePath "))
-            sink.put("-J=" ~ fileRebaser.correctedPath(command));
-        else if (command.skipOver("library "))
-            sink.put(fileRebaser.correctedPath(command));
-        else if (command.skipOver("version "))
-            sink.put("-version=" ~ command);
-        else if (command.skipOver("env "))
-        {
-            auto indexOfEquals = command.indexOf('=');
-            if (indexOfEquals < 0) throw new ReadCompilerConfigException(format(
-                "Error: compiler directive `%s` requires argument with format VAR=VALUE", line), sourceFilename, lineno);
-            environment[command[0 .. indexOfEquals]] = command[indexOfEquals + 1 .. $];
-        }
-        else if (command.skipOver("unittest"))
-            sink.put("-unittest");
-        else if (command.skipOver("betterC"))
-            sink.put("-betterC");
-        else if (command.skipOver("noConfigFile"))
-            sink.put("-conf=");
-        else throw new ReadCompilerConfigException(format(
-            "unknown compiler directive `%s`", line), sourceFilename, lineno);
-
-        line = sourceFile.readln().stripNewline;
-        lineno++;
-    }
-}
-auto stripNewline(inout(char)[] line)
-{
-    while (line.length > 0 && (line[$ - 1] == '\n' || line[$ - 1] == '\r'))
-        line.length--;
-    return line;
 }

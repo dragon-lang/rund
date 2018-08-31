@@ -6,44 +6,14 @@ import std.string : startsWith, endsWith, chomp, split;
 import std.format : format;
 import std.algorithm : filter;
 import std.datetime : SysTime;
-import std.path : buildPath, buildNormalizedPath, baseName, absolutePath, relativePath, isRooted, pathSeparator;
-import std.file : getcwd;
+import std.path : buildPath, buildNormalizedPath, baseName, absolutePath, pathSeparator;
 import std.process : environment;
 
 import rund.common;
 import rund.chatty;
+import rund.filerebaser;
 
 immutable defaultExclusionPackages = ["std", "etc", "core"];
-
-struct FileRebaser
-{
-    private string rebaseDir;
-    this(string otherCwd)
-    {
-        auto cwd = getcwd();
-        if (cwd == otherCwd)
-        {
-            this.rebaseDir = null;
-        }
-        else
-        {
-            auto relative = relativePath(otherCwd);
-            auto absolute = absolutePath(otherCwd);
-            this.rebaseDir = (relative.length < absolute.length) ? relative : absolute;
-        }
-    }
-    string correctedPath(string path)
-    {
-        if (rebaseDir is null) return path;
-        return path.isRooted ? path : buildNormalizedPath(rebaseDir, path);
-    }
-    string yapCorrectedPath(string logName, string path)
-    {
-        auto result = correctedPath(path);
-        yapf("%s %s => %s", logName, path.formatQuotedIfSpaces, result.formatQuotedIfSpaces);
-        return result;
-    }
-}
 
 // Assumption: filename exists
 string[string] readJsonFile(string jsonFilename, string objDir)

@@ -103,8 +103,10 @@ string build()
     auto sourceFiles = [
          getFilename("rund.d"),
          getFilename("src", "rund", "common.d"),
+         getFilename("src", "rund", "filerebaser.d"),
          getFilename("src", "rund", "chatty.d"),
          getFilename("src", "rund", "deps.d"),
+         getFilename("src", "rund", "directives.d"),
     ];
     auto targetExe = getFilename("bin", "rund" ~ binExt);
     auto targetModifyTime = timeLastModified(targetExe, SysTime.min);

@@ -12,6 +12,7 @@ import std.datetime : SysTime;
 import std.process : spawnShell, wait, environment, escapeShellCommand;
 
 import rund.common;
+import rund.file;
 
 class SilentException : Exception { this() { super(null); } }
 
@@ -103,6 +104,7 @@ string build()
     auto sourceFiles = [
          getFilename("rund.d"),
          getFilename("src", "rund", "common.d"),
+         getFilename("src", "rund", "file.d"),
          getFilename("src", "rund", "filerebaser.d"),
          getFilename("src", "rund", "chatty.d"),
          getFilename("src", "rund", "deps.d"),

@@ -35,6 +35,7 @@ void processDirectivesFromReader(T, R)(T compiler, string sourceFilename, R line
     import std.path : dirName;
     import std.process : environment;
     import rund.filerebaser;
+    import rund.file : getFileAttributes;
 
     auto line = lineReader();
     size_t lineno = 1;
@@ -53,7 +54,13 @@ void processDirectivesFromReader(T, R)(T compiler, string sourceFilename, R line
             return;
 
         if (command.skipOver("importPath "))
-            compiler.put("-I=" ~ fileRebaser.correctedPath(command));
+        {
+            auto path = fileRebaser.correctedPath(command);
+            auto attr = getFileAttributes(path);
+            if (!attr.exists)
+                throw new SourceDirectiveException(format("import path '%s' does not exist", path), sourceFilename, lineno);
+            compiler.put("-I=" ~ path);
+        }
         else if (command.skipOver("importFilenamePath "))
             compiler.put("-J=" ~ fileRebaser.correctedPath(command));
         else if (command.skipOver("library "))

@@ -15,6 +15,7 @@ import std.string;
 import std.stdio;
 
 import rund.common;
+import rund.file;
 
 class SilentException : Exception { this() { super(null); } }
 

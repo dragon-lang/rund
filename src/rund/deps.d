@@ -10,6 +10,7 @@ import std.path : buildPath, buildNormalizedPath, baseName, absolutePath, pathSe
 import std.process : environment;
 
 import rund.common;
+import rund.file;
 import rund.chatty;
 import rund.filerebaser;
 

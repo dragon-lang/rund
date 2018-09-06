@@ -4,6 +4,7 @@ import std.format : format;
 import std.stdio : writef, writefln, writeln, stderr;
 
 import rund.common;
+import rund.file;
 import rund.filerebaser : FileRebaser;
 
 __gshared bool chatty;

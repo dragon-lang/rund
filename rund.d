@@ -39,6 +39,7 @@ import std.stdio : stderr, stdout, stdin,
                    write, writeln, writef, writefln, File;
 
 import rund.common;
+import rund.file;
 import rund.chatty;
 import rund.deps;
 import rund.directives;
@@ -242,7 +243,15 @@ int main(string[] args)
 
     {
         auto builder = appender!(string[])();
-        processDirectivesFromFile(builder, mainSource);
+        try
+        {
+            processDirectivesFromFile(builder, mainSource);
+        }
+        catch (SourceDirectiveException e)
+        {
+            writefln("rund: Error: %s(%s): %s", e.file, e.line, e.msg);
+            return 1; // fail
+        }
         if (builder.data.length == 0)
             allCompilerArgs = compilerArgsFromCommandLine;
         else

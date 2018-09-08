@@ -6,8 +6,8 @@ import std.array : Appender, appender;
 import std.string : startsWith, split;
 import std.format : format;
 import std.path : dirName, buildPath, relativePath, pathSeparator;
-import std.file : timeLastModified, isFile, exists, copy;
-import std.stdio : write, writeln, writefln;
+import std.file : timeLastModified, isFile, exists, copy, FileException;
+import std.stdio : write, writeln, writefln, File;
 import std.datetime : SysTime;
 import std.process : spawnShell, wait, environment, escapeShellCommand;
 
@@ -148,6 +148,7 @@ int install(string targetExe)
         writefln("Error: no 'dmd' compilers were found in the path to install rund to");
         return 1;
     }
+
     foreach(program; programs.data)
     {
         auto installedRund = buildPath(dirName(program), "rund" ~ binExt);
@@ -156,25 +157,83 @@ int install(string targetExe)
             writefln("[make] Installing %s to %s",
                 formatQuotedIfSpaces(from),
                 formatQuotedIfSpaces(to));
-            copy(from, to);
+            try
+            {
+                copy(from, to);
+            }
+            catch(FileException e)
+            {
+                version (Windows)
+                {
+                    import core.sys.windows.winerror : ERROR_SHARING_VIOLATION;
+                    if (e.errno == ERROR_SHARING_VIOLATION)
+                    {
+                        writefln("[make] Error: cannot overwrite rund while it is running: %s", to);
+                        writefln("Use the newly built rund to install itself instead: bin\\rund.exe make.d install");
+                        throw new SilentException();
+                    }
+                }
+                throw e;
+            }
             version(Posix)
             {
                 import std.file : getAttributes, setAttributes;
                 setAttributes(to, getAttributes(from));
             }
         }
-        if(exists(installedRund))
-        {
-            // TODO: check if that rund is the same as this one
-            writefln("[make] '%s' exists (TODO: check if it is up-to-date, for now just overrwrite)", installedRund);
+        if (!exists(installedRund))
             copyBinary(targetExe, installedRund);
-        }
         else
         {
-            copyBinary(targetExe, installedRund);
+            if (filesAreEqual(targetExe, installedRund))
+                writefln("[make] '%s' exists and is up-to-date", installedRund);
+            else
+            {
+                writefln("[make] '%s' exists but is not up-to-date", installedRund);
+                copyBinary(targetExe, installedRund);
+            }
         }
     }
     return 0;
+}
+
+bool filesAreEqual(const(char)[] filename1, const(char)[] filename2)
+{
+    auto file1 = File(filename1, "rb");
+    auto file2 = File(filename2, "rb");
+
+    ulong sizeUlong = file1.size;
+    assert(sizeUlong <= uint.max, "file is too large!");
+    uint size = cast(uint)sizeUlong;
+
+    if (size != file2.size)
+        return false;
+
+    enum ReadSize = 2048;
+    auto buffer1 = new ubyte[ReadSize];
+    auto buffer2 = new ubyte[ReadSize];
+    auto left = size;
+    for (; left > 0;)
+    {
+        uint readSize = ReadSize;
+        if (readSize > left)
+            readSize = left;
+        {
+            auto result = file1.rawRead(buffer1[0 .. readSize]).length;
+            assert(result == readSize, format("read '%s' length %s failed, returned %s",
+                filename1, readSize, result));
+        }
+        {
+            auto result = file2.rawRead(buffer2[0 .. readSize]).length;
+            assert(result == readSize, format("read '%s' length %s failed, returned %s",
+                filename2, readSize, result));
+        }
+        if (buffer1[0 .. readSize] != buffer2[0 .. readSize])
+            return false;
+
+        left -= readSize;
+    }
+    return true;
 }
 
 void findPrograms(Appender!(string[]) programs, string[] programNames)

@@ -397,7 +397,9 @@ int main(string[] args)
     {
         import std.process : execv;
         auto argv = runCommand.map!toStringz.chain(null.only).array;
-        return execv(argv[0], argv.ptr);
+        execv(argv[0], argv.ptr);
+        stderr.writefln("rund: Error: exec '%s' failed", output.file);
+        return 1;
     }
 }
 

@@ -142,12 +142,30 @@ int main(string[] args)
             auto arg = args[i];
             if (!arg.startsWith("-"))
             {
-                if (arg.endsWith(".d"))
+                auto dotIndex = arg.lastIndexOf('.');
+                if (dotIndex == -1)
                 {
-		    mainSource = arg;
+                    // TODO: do we just always append '.d' here? Or are there
+                    //       cases where the main source file won't actually end in '.d'?
+                    // NOTE: this feature is for "power users" who can benefit from
+                    //       saving a couple characters, but this feature isn't documented
+                    //       in the main usage.  It should only be used interactively, never
+                    //       inside a script.
+                    mainSource = arg ~ ".d";
+                }
+                else if (arg[dotIndex + 1 .. $] == "d")
+                {
+                    mainSource = arg;
+                }
+
+                if (mainSource)
+                {
 		    runArgs = args[i + 1 .. $];
                     break;
                 }
+                // In this case, it means the user is passing a file to the
+                // compiler that has an extension that is not ".d", i.e.
+                // a library/object file, a '.di' file, a map file, etc
                 addCompilerArg(arg);
             }
             else if (auto compilerValue = arg.isValueArg("--compiler", No.canBeEmpty))

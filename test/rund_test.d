@@ -73,7 +73,11 @@ int tryMain(string[] args)
     // copy rund executable to temp dir: this enables us to set
     // up its execution environment with other features, e.g. a
     // dummy fallback compiler
-    string rundApp = tempDir().buildPath("rund_app_") ~ binExt;
+    auto testDir = tempDir().buildPath("rund_test");
+    if (exists(testDir))
+        rmTree(testDir);
+    mkdir(testDir);
+    const rundApp = buildPath(testDir, "rund_app_") ~ binExt;
     // don't remove rundApp on failure so that the user can
     // execute it
     scope (success) std.file.remove(rundApp);
@@ -98,6 +102,23 @@ int tryMain(string[] args)
     }
 
     return 0;
+}
+
+void rmTree(string dir)
+{
+    writefln("rmTree '%s'", dir);
+    foreach(entry; dirEntries(dir, SpanMode.depth, false))
+    {
+        if (entry.isDir)
+            rmTree(entry.name);
+        else
+        {
+            writefln("  - rm '%s'", entry.name);
+            remove(entry.name);
+        }
+    }
+    writefln("  - rmdir '%s'", dir);
+    rmdir(dir);
 }
 
 auto addModelSwitch(string[] args, string model)
@@ -226,6 +247,7 @@ struct TestFiles
     string voidMain;
     string failComptime;
     string failRuntime;
+    string hello;
     void create()
     {
         pragmaPrintCompilingSource = makeTempFile("pragma_print.d",
@@ -235,6 +257,7 @@ struct TestFiles
             "void main() { static assert(0); }");
         failRuntime = makeTempFile("fail_runtime_.d",
             "void main() { assert(0); }");
+        hello = makeTempFile("hello.d", "import std.stdio; void main() { writeln(\"Hello!\"); }");
     }
 }
 
@@ -245,6 +268,11 @@ void runTests(string rundApp, string compiler, string model)
 
     auto testFiles = TestFiles();
     testFiles.create();
+
+    execPass(rundArgs ~ [testFiles.hello])
+        .enforceCanFind("Hello!");
+    execPass(rundArgs ~ [testFiles.hello.stripExtension])
+        .enforceCanFind("Hello!");
 
     // Test --force
     execPass(rundArgs ~ [testFiles.pragmaPrintCompilingSource])

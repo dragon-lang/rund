@@ -350,8 +350,14 @@ int main(string[] args)
     yapf("target binary %s", output.file.formatQuotedIfSpaces);
 
     //lockWorkPath(cacheDir); // will be released by the OS on process exit
-    string objDir = buildPath(cacheDir, "objs");
-    Chatty.mkdirRecurseIfLive(objDir);
+    string objDir;
+    if (userOptions.outputDir)
+        objDir = userOptions.outputDir;
+    else
+    {
+        objDir = buildPath(cacheDir, "objs");
+        Chatty.mkdirRecurseIfLive(objDir);
+    }
 
     /+
     if (lib)

@@ -78,6 +78,10 @@ void processDirectivesFromReader(T, R)(T compiler, string sourceFilename, R line
             compiler.put("-unittest");
         else if (command.skipOver("betterC"))
             compiler.put("-betterC");
+        else if (command.skipOver("debugSymbols"))
+            compiler.put("-g");
+        else if (command.skipOver("debug"))
+            compiler.put("-debug");
         else if (command.skipOver("noConfigFile"))
             compiler.put("-conf=");
         else throw new SourceDirectiveException(format(

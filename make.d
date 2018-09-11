@@ -275,7 +275,7 @@ void test(const(char)[] rundExe, string[] extraArgs)
     run(format("%s -g -debug %s %s %s%s",
         formatQuotedIfSpaces(rundExe),
         formatQuotedIfSpaces("-I" ~ getFilename("src")),
-        getFilename("test", "rund_test.d"),
+        getFilename("rund_test.d"),
         formatQuotedIfSpaces(rundExe),
         (extraArgs.length == 0) ? "" : escapeShellCommand(extraArgs)));
 }

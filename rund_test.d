@@ -1,4 +1,7 @@
 #!/usr/bin/env rund
+//!importPath src
+//!debug
+//!debugSymbols
 
 // TODO: replace assert with enforce
 
@@ -16,6 +19,8 @@ import std.stdio;
 
 import rund.common;
 import rund.file;
+
+__gshared string rundTempDir;
 
 class SilentException : Exception { this() { super(null); } }
 
@@ -73,11 +78,11 @@ int tryMain(string[] args)
     // copy rund executable to temp dir: this enables us to set
     // up its execution environment with other features, e.g. a
     // dummy fallback compiler
-    auto testDir = tempDir().buildPath("rund_test");
-    if (exists(testDir))
-        rmTree(testDir);
-    mkdir(testDir);
-    const rundApp = buildPath(testDir, "rund_app_") ~ binExt;
+    rundTempDir = buildPath(tempDir(), "rund_test");
+    if (exists(rundTempDir))
+        rmdirRecurse(rundTempDir);
+    mkdir(rundTempDir);
+    const rundApp = buildPath(rundTempDir, "rund_app_" ~ binExt);
     // don't remove rundApp on failure so that the user can
     // execute it
     scope (success) std.file.remove(rundApp);
@@ -104,21 +109,15 @@ int tryMain(string[] args)
     return 0;
 }
 
-void rmTree(string dir)
+void rmdirRecurse(scope const(char)[] dir)
 {
-    writefln("rmTree '%s'", dir);
-    foreach(entry; dirEntries(dir, SpanMode.depth, false))
-    {
-        if (entry.isDir)
-            rmTree(entry.name);
-        else
-        {
-            writefln("  - rm '%s'", entry.name);
-            remove(entry.name);
-        }
-    }
-    writefln("  - rmdir '%s'", dir);
-    rmdir(dir);
+    writefln("rmRecurse '%s'", dir);
+    std.file.rmdirRecurse(dir);
+}
+void chdir(R)(R pathname)
+{
+    writefln("cd '%s'", pathname);
+    std.file.chdir(pathname);
 }
 
 auto addModelSwitch(string[] args, string model)
@@ -235,7 +234,7 @@ auto rundArguments(string rundApp, string compiler, string model)
 
 auto makeTempFile(string name, string contents)
 {
-    auto filename = tempDir().buildPath(name);
+    auto filename = buildPath(rundTempDir, name);
     std.file.write(filename, contents);
     return filename;
 }
@@ -326,7 +325,7 @@ void runTests(string rundApp, string compiler, string model)
     +/
 
     // Test exclusion (-i=-<pattern>)
-    string packFolder = tempDir().buildPath("dsubpack");
+    string packFolder = buildPath(rundTempDir, "dsubpack");
     if (packFolder.exists) packFolder.rmdirRecurse();
     packFolder.mkdirRecurse();
     scope (success) packFolder.rmdirRecurse();
@@ -338,7 +337,7 @@ void runTests(string rundApp, string compiler, string model)
     // build an object file out of the dependency
     execPass(rundArgs ~ ["-c", "-of" ~ subModObj, subModSrc]);
 
-    string subModUser = tempDir().buildPath("subModUser_.d");
+    string subModUser = buildPath(rundTempDir, "subModUser_.d");
     std.file.write(subModUser, "module subModUser_; import dsubpack.submod; void main() { foo(); }");
 
     // building without the dependency fails
@@ -348,7 +347,7 @@ void runTests(string rundApp, string compiler, string model)
     execPass(rundArgs ~ ["--force", "-i=-dsubpack", subModObj, subModUser]);
 
     // Test inclusion (-i=<pattern>)
-    auto packFolder2 = tempDir().buildPath("std");
+    auto packFolder2 = buildPath(rundTempDir, "std");
     if (packFolder2.exists) packFolder2.rmdirRecurse();
     packFolder2.mkdirRecurse();
     scope (success) packFolder2.rmdirRecurse();
@@ -467,7 +466,7 @@ void runTests(string rundApp, string compiler, string model)
     // -of doesn't append .exe on Windows: https://issues.dlang.org/show_bug.cgi?id=12149
     version (Windows)
     {
-        auto outPath = tempDir().buildPath("test_of_app");
+        auto outPath = buildPath(rundTempDir, "test_of_app");
         auto outExe = outPath ~ ".exe";
         if (exists(outExe))
             remove(outExe);
@@ -481,13 +480,8 @@ void runTests(string rundApp, string compiler, string model)
 
     {
         auto cwd = getcwd();
-        writefln("cd %s", tempDir.formatQuotedIfSpaces);
-        chdir(tempDir);
-        scope(exit)
-        {
-            writefln("cd %s", cwd.formatQuotedIfSpaces);
-            chdir(cwd);
-        }
+        chdir(rundTempDir);
+        scope(exit) chdir(cwd);
 
         execPass(rundArgs ~ [testFiles.pragmaPrintCompilingSource.baseName])
             .enforceCannotFind(CompilingSourceMessage);
@@ -608,6 +602,7 @@ void runTests(string rundApp, string compiler, string model)
     {
         TempDir srcDir = "rundTestSrc";
         TempDir libDir = "rundTestLib";
+        TempDir binDir = "rundTestBin";
 
         string srcName = srcDir.buildPath("test.d");
         std.file.write(srcName, `void fun() {}`);
@@ -621,6 +616,11 @@ void runTests(string rundApp, string compiler, string model)
 
         execPass(rundArgs ~ ["--build-only", "--force", "-lib", "-of=" ~ altLibName, srcName]);
         assert(exists(altLibName));
+
+        auto helloExe = binDir.buildPath("hello");
+        execPass(rundArgs ~ ["--force", "-of=" ~ helloExe, testFiles.hello])
+            .enforceCanFind("Hello!");
+        assert(exists(helloExe));
     }
 
     /* rund --build-only --force -c main.d fails: ./main: No such file or directory: https://issues.dlang.org/show_bug.cgi?id=16962 */
@@ -688,7 +688,7 @@ void runTests(string rundApp, string compiler, string model)
     {
         import std.format : format;
 
-        auto textOutput = tempDir().buildPath("rund_makefile_test.txt");
+        auto textOutput = buildPath(rundTempDir, "rund_makefile_test.txt");
         if (exists(textOutput))
         {
             remove(textOutput);
@@ -700,7 +700,7 @@ SHELL = %s
 	import std.file;
 	write("$@","hello world\n");`;
         string makefileString = format!makefileFormatter(rundArgs[0], rundArgs[1 .. $], textOutput);
-        auto makefilePath = tempDir().buildPath("rund_makefile_test.mak");
+        auto makefilePath = buildPath(rundTempDir, "rund_makefile_test.mak");
         std.file.write(makefilePath, makefileString);
         auto make = environment.get("MAKE") is null ? "make" : environment.get("MAKE");
         res = execute([make, "-f", makefilePath]);
@@ -715,7 +715,7 @@ void runConcurrencyTest(string rundApp, string compiler, string model)
     // path to rund + common arguments (compiler, model)
     auto rundArgs = rundArguments(rundApp, compiler, model);
 
-    string sleep100 = tempDir().buildPath("delay_.d");
+    string sleep100 = buildPath(rundTempDir, "delay_.d");
     std.file.write(sleep100, "void main() { import core.thread; Thread.sleep(100.msecs); }");
     auto argsVariants =
     [
@@ -752,7 +752,7 @@ void runFallbackTest(string rundApp, string buildCompiler, string model)
         throw new Exception("cannot create file");
     }
 
-    auto compilerFile = buildPath(tempDir(), buildCompiler);
+    auto compilerFile = buildPath(rundTempDir, buildCompiler);
     enum emptyMainFile = "emptymain.d";
     std.file.write(emptyMainFile, "int main(){return 0;}");
     version(Windows)

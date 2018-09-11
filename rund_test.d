@@ -617,7 +617,7 @@ void runTests(string rundApp, string compiler, string model)
         execPass(rundArgs ~ ["--build-only", "--force", "-lib", "-of=" ~ altLibName, srcName]);
         assert(exists(altLibName));
 
-        auto helloExe = binDir.buildPath("hello");
+        auto helloExe = binDir.buildPath("hello") ~ binExt;
         execPass(rundArgs ~ ["--force", "-of=" ~ helloExe, testFiles.hello])
             .enforceCanFind("Hello!");
         assert(exists(helloExe));

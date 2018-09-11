@@ -393,7 +393,7 @@ int main(string[] args)
     auto jsonFilename = buildPath(cacheDir, "lastBuild.json");
     if (determineCompile(force, output, jsonFilename, objDir))
     {
-        immutable result = performBuild(compiler, mainSource, output.file, cacheDir, objDir,
+        immutable result = performBuild(compiler, mainSource, output, cacheDir, objDir,
             allCompilerArgs, jsonFilename);
         if (result)
             return result;
@@ -635,34 +635,41 @@ private void unlockWorkPath()
 }
 +/
 
-private int performBuild(in string compiler, string mainSource, string outputFile,
+private int performBuild(in string compiler, string mainSource, Output output,
     string cacheDir, string objDir, string[] compilerArgs, string jsonFilename)
 {
     // Delete the old executable before we start building.
     {
-        auto attrs = Chatty.getFileAttributes(outputFile);
+        auto attrs = Chatty.getFileAttributes(output.file);
         if (attrs.exists)
         {
-            enforce(attrs.isFile, "cannot remove '" ~ outputFile ~ "' because is not a normal file");
+            enforce(attrs.isFile, "cannot remove '" ~ output.file ~ "' because is not a normal file");
             try
-                Chatty.removeIfLive(outputFile);
+                Chatty.removeIfLive(output.file);
             catch (FileException e)
             {
                 // This can occur on Windows if the executable is locked.
                 // Although we can't delete the file, we can still rename it.
                 yap("failed to remove %s: %s, attempting to rename it instead",
-                    outputFile, e.msg);
-                auto oldExe = "%s.%s-%s.old".format(outputFile,
+                    output.file, e.msg);
+                auto oldExe = "%s.%s-%s.old".format(output.file,
                     Clock.currTime.stdTime, thisProcessID);
-                Chatty.rename(outputFile, oldExe);
+                Chatty.rename(output.file, oldExe);
             }
         }
     }
 
-    auto outputFileTemp = buildPath(cacheDir, "compilerOutput.tmp");
+    // NOTE: if we are using a buildWitness, then we can just generate the
+    //       output file in the final location because we don't use that file
+    //       to check if it is up-to-date...we check the buildWitness
+    string initialOutputFile = output.buildWitness ?
+        output.file :
+         // make sure the temporary output file is the same directory as final output
+         // file so rename will work (don't have to copy across filesystems)
+        buildPath(dirName(output.file), "compilerOutput.tmp");
 
     auto allCompilerArgs = compilerArgs ~ [
-        "-of=" ~ outputFileTemp,
+        "-of=" ~ absolutePath(initialOutputFile), // this needs to be absolute because -od is given
         "-od=" ~ objDir,
         "-I=" ~ dirName(mainSource),
         "-i",
@@ -711,17 +718,19 @@ private int performBuild(in string compiler, string mainSource, string outputFil
         // print the compiler command if it wasn't already printed via chatty
         if (!chatty)
             printCompilerShellCommand(stderr);
-        if (Chatty.exists(outputFileTemp))
-            Chatty.remove(outputFileTemp);
+        if (Chatty.exists(initialOutputFile))
+            Chatty.remove(initialOutputFile);
         if (Chatty.exists(jsonFilename))
             Chatty.remove(jsonFilename);
     }
     else
     {
-        // NOTE: using `rename` has problems when moving files between
-        //       filesystems/drives, for that reason, I created `moveFile`
-        //       which falls back to copy/remove
-        Chatty.moveFile(outputFileTemp, outputFile);
+        if (!output.buildWitness)
+        {
+            // NOTE: initialOutputFile and output.file should be in same
+            //       directory, so no need to fallback to copy/delete
+            Chatty.rename(initialOutputFile, output.file);
+        }
     }
     /*
     if (jsonSettings.enabled)

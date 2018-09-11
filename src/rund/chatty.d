@@ -86,7 +86,7 @@ struct Chatty
             enum skipOnDryRun = false;
         }
 
-        static if (fileFunc.among("copy", "moveFile", "rename"))
+        static if (fileFunc.among("copy", "rename"))
         {
             enum logReturn = false;
             yap!(file, line)(fileFunc, " ", args[0], " ", args[1]);

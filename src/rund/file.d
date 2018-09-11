@@ -70,20 +70,6 @@ FileAttributes getFileAttributes(const(char)[] name)
     else static assert(0);
 }
 
-void moveFile(const(char)[] from, const(char)[] to)
-{
-    static import std.file;
-    try
-    {
-        std.file.rename(from, to);
-    }
-    catch (std.file.FileException)
-    {
-        std.file.copy(from, to);
-        std.file.remove(from);
-    }
-}
-
 string which(string path)
 {
     import std.algorithm : findAmong, splitter;

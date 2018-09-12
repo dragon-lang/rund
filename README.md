@@ -60,6 +60,9 @@ rund supports "compiler directives" in the main source file.  Each directive lin
 //!env <var>=<value>
 //!noConfigFile
 //!betterC
+//!unittest
+//!debug
+//!debugSymbols
 ```
 
 ### Test rund

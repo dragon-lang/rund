@@ -12,7 +12,8 @@ This is a rewrite of `rdmd` that runs about twice as fast. It does so by utilizi
 
 The build/test/install code is written in D and contained in `make.d`.  If you already have `rund` compiled and installed, you can use that to run `make.d`, otherwise, you can use the compiler directly to run it:
 
-> NOTE: there is a bug on windows where using `dmd -run` will introduce a `LINKCMD` environment variable that will set the linker to `OPTLINK` but then further invocations of dmd with a model set (i.e. `-m64`) will use the Microsoft linker.  This makes `dmd` use the Microsoft linker command line interface with OPTLINK!
+> NOTE: there is a bug on windows where using `dmd -run` will introduce a `LINKCMD` environment variable that will set the linker to `OPTLINK` but then further invocations of dmd with a model set (i.e. `-m64`) will use the Microsoft linker.  This makes `dmd` use the Microsoft linker command line interface with OPTLINK! (see https://issues.dlang.org/show_bug.cgi?id=18729)
+
 
 ### Build rund
 

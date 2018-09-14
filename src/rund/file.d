@@ -1,5 +1,7 @@
 module rund.file;
 
+import std.typecons : Flag, Yes, No;
+
 version (Posix)
 {
     enum objExt = ".o";
@@ -34,8 +36,18 @@ struct FileAttributes
         import std.file : attrIsDir;
         return _exists && attrIsDir(attributes);
     }
+    bool isSymlink() const
+    {
+        version (Windows)
+            return false;
+        else
+        {
+            import std.file : attrIsSymlink;
+            return _exists && attrIsSymlink(attributes);
+        }
+    }
 }
-FileAttributes getFileAttributes(const(char)[] name)
+FileAttributes getFileAttributes(const(char)[] name, Flag!"resolveLink" resolveLink = Yes.resolveLink)
 {
     import std.internal.cstring : tempCString;
     import std.format : format;
@@ -57,9 +69,14 @@ FileAttributes getFileAttributes(const(char)[] name)
     else version(Posix)
     {
         import core.stdc.errno : errno, ENOENT;
-        import core.sys.posix.sys.stat : stat_t, stat;
+        import core.sys.posix.sys.stat : stat_t, stat, lstat;
         stat_t statbuf = void;
-        if(0 != stat(name.tempCString!char(), &statbuf))
+        int result;
+        if (resolveLink)
+            result = stat(name.tempCString!char(), &statbuf);
+        else
+            result = lstat(name.tempCString!char(), &statbuf);
+        if(result != 0)
         {
             if (errno == ENOENT)
                 return FileAttributes(0, false);

@@ -92,7 +92,7 @@ struct Chatty
             yap!(file, line)(fileFunc, " ", args[0], " ", args[1]);
         }
         else static if (fileFunc.among("remove", "mkdirRecurse", "rmdirRecurse", "dirEntries", "write",
-            "writeEmptyFile", "readText", "exists", "timeLastModified", "isFile", "isDir", "existsAsFile", "getFileAttributes",))
+            "writeEmptyFile", "readText", "exists", "timeLastModified", "isFile", "isDir", "existsAsFile", "getFileAttributes", "readLink"))
         {
             enum logReturn = false;
             yap!(file, line)(fileFunc, " ", args[0]);

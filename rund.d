@@ -29,7 +29,7 @@ static import std.string;
 import std.string : startsWith, endsWith, toStringz, representation, join, lastIndexOf, replace;
 import std.format : format;
 import std.digest.md : MD5, toHexString;
-import std.path : buildPath, buildNormalizedPath, dirName, baseName, isAbsolute, pathSeparator, dirSeparator, absolutePath;
+import std.path : buildPath, buildNormalizedPath, dirName, baseName, isAbsolute, pathSeparator, dirSeparator, absolutePath, extension;
 import std.datetime : SysTime, Clock;
 import std.process : thisProcessID, escapeShellCommand, escapeWindowsArgument,
                      environment, spawnProcess, wait;
@@ -142,31 +142,55 @@ int main(string[] args)
             auto arg = args[i];
             if (!arg.startsWith("-"))
             {
-                auto dotIndex = arg.lastIndexOf('.');
-                if (dotIndex == -1)
+                auto file = arg;
+                auto attr = Chatty.getFileAttributes(file, No.resolveLink);
+
+                if (!attr.exists)
                 {
-                    // TODO: do we just always append '.d' here? Or are there
-                    //       cases where the main source file won't actually end in '.d'?
-                    // NOTE: this feature is for "power users" who can benefit from
-                    //       saving a couple characters, but this feature isn't documented
-                    //       in the main usage.  It should only be used interactively, never
-                    //       inside a script.
-                    mainSource = arg ~ ".d";
-                }
-                else if (arg[dotIndex + 1 .. $] == "d")
-                {
-                    mainSource = arg;
+                    // support "rund <file>" with no .d extension
+                    if (file.endsWith(".d"))
+                        file = null;
+                    else
+                    {
+                        file ~= ".d";
+                        attr = Chatty.getFileAttributes(file, No.resolveLink);
+                        if (!attr.exists)
+                            file = null;
+                    }
+                    if (file is null)
+                    {
+                        stderr.writefln("rund: Error: '%s' does not exist", arg);
+                        return 1;
+                    }
                 }
 
-                if (mainSource)
+                version (Posix)
                 {
-		    runArgs = args[i + 1 .. $];
+                    // resolve any symlinks so we know the real file extension
+                    // of the target file
+                    if (attr.isSymlink)
+                    {
+                        file = tryResolveSymlink(file);
+                        if (file is null)
+                            return 1; // error already logged
+                    }
+                }
+
+                // check if this is the main source argument
+                auto ext = extension(file);
+                if (ext == ".d")
+                {
+                    mainSource = file;
+                    runArgs = args[i + 1 .. $];
                     break;
                 }
-                // In this case, it means the user is passing a file to the
-                // compiler that has an extension that is not ".d", i.e.
-                // a library/object file, a '.di' file, a map file, etc
-                addCompilerArg(arg);
+                else
+                {
+                    // In this case, it means the user is passing a file to the
+                    // compiler that has an extension that is not ".d", i.e.
+                    // a library/object file, a '.di' file, a map file, etc
+                    addCompilerArg(file);
+                }
             }
             else if (auto compilerValue = arg.isValueArg("--compiler", No.canBeEmpty))
             {
@@ -424,6 +448,28 @@ int main(string[] args)
         execv(argv[0], argv.ptr);
         stderr.writefln("rund: Error: exec '%s' failed", output.file);
         return 1;
+    }
+}
+
+version (Posix)
+{
+    // dmd does not allow source files to be passed in as links, so we must resolve them
+    // assumption: filename is a symbolic link
+    string tryResolveSymlink(const(char)[] link)
+    {
+        auto next = link;
+        for (;;)
+        {
+            next = Chatty.readLink(next);
+            auto attr = Chatty.getFileAttributes(next, No.resolveLink);
+            if (!attr.exists)
+            {
+                stderr.writefln("rund: Error: broken link '%s'", link);
+                return null;
+            }
+            if (!attr.isSymlink)
+                return cast(string)next;
+        }
     }
 }
 

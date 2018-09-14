@@ -684,6 +684,29 @@ void runTests(string rundApp, string compiler, string model)
         execFail(rundArgs ~ [src1]);
     }
 
+    // test symbolic links to source files
+    version (Posix)
+    {
+        auto link1 = "hello_link.link";
+        if (exists(link1))
+            remove(link1);
+        symlink(testFiles.hello, link1);
+        execPass(rundArgs ~ [link1])
+            .enforceCanFind("Hello!");
+        auto link2 = "hello_link2.d";
+        if (exists(link2))
+            remove(link2);
+        symlink(link1, link2);
+        execPass(rundArgs ~ [link2])
+            .enforceCanFind("Hello!");
+        execPass(rundArgs ~ [link2.stripExtension])
+            .enforceCanFind("Hello!");
+        remove(link1);
+        execFail(rundArgs ~ [link2])
+            .enforceCanFind(format("Error: broken link '%s'", link2));
+        remove(link2);
+    }
+
 /+
     {
         import std.format : format;

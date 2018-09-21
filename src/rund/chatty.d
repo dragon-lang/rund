@@ -19,7 +19,7 @@ private void yapfWithLoc(T...)(string file, size_t line, string format, T args)
     if(chatty)
     {
         debug stderr.writef("%s(%s) ", file, line);
-        writefln(format, args);
+        stderr.writefln(format, args);
     }
 }
 pragma(inline) void yap(string file = __FILE__, size_t line = __LINE__, T...)(auto ref T stuff)

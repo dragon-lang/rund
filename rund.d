@@ -71,6 +71,7 @@ In addition to all the compiler options, rund also recognizes:
   --chatty             print information about what rund is doing
   --build-only         build but do not run
   --dry-run            do not build, just print actions
+  --od=<dir>           main output file directory (same as -of but just the directory)
   --pass=<arg>.d       pass an argument ending in ".d" to rund or the compiler.
   --cache=<dir>        override default cache directory %s
 `, buildDefaultCacheDir().formatQuotedIfSpaces);
@@ -125,6 +126,7 @@ int main(string[] args)
     bool buildOnly;
     bool force;
     bool help;
+    string mainFileOutputDir;
     RundSpecificCompilerOptions userOptions;
 
     {
@@ -142,43 +144,30 @@ int main(string[] args)
             auto arg = args[i];
             if (!arg.startsWith("-"))
             {
-                auto file = arg;
-                auto attr = Chatty.getFileAttributes(file, No.resolveLink);
-
-                if (!attr.exists)
+                auto file = symlinkTarget(arg);
+                if (file is null) // was not a symlink
                 {
-                    // support "rund <file>" with no .d extension
-                    if (file.endsWith(".d"))
-                        file = null;
-                    else
-                    {
+                    file = arg;
+
+                    // dmd automatically appends ".d" to files with no
+                    // extensions. We do this inside rund so we get the
+                    // same filename for our cache path hash.
+                    if (extension(file).length == 0)
                         file ~= ".d";
-                        attr = Chatty.getFileAttributes(file, No.resolveLink);
-                        if (!attr.exists)
-                            file = null;
-                    }
-                    if (file is null)
+
+                    const attr = Chatty.getFileAttributes(file, No.resolveLink);
+                    if (!attr.exists)
                     {
-                        stderr.writefln("rund: Error: '%s' does not exist", arg);
+                        stderr.writefln("rund: Error: '%s' does not exist", file);
                         return 1;
                     }
-                }
-
-                version (Posix)
-                {
-                    // resolve any symlinks so we know the real file extension
-                    // of the target file
-                    if (attr.isSymlink)
+                    version (Posix)
                     {
-                        file = tryResolveSymlink(file);
-                        if (file is null)
-                            return 1; // error already logged
+                        if (attr.isSymlink)
+                            file = followSymlink(file);
                     }
                 }
-
-                // check if this is the main source argument
-                auto ext = extension(file);
-                if (ext == ".d")
+                if (extension(file) == ".d")
                 {
                     mainSource = file;
                     runArgs = args[i + 1 .. $];
@@ -243,6 +232,8 @@ int main(string[] args)
             }
             else if (arg == "--force")
                 force = true;
+            else if (auto dir = arg.isValueArg("--od", No.canBeEmpty))
+                mainFileOutputDir = dir;
             else if (arg == "--help" || arg == "-h")
                 help = true;
             else
@@ -384,7 +375,7 @@ int main(string[] args)
     //       pulled from main source "compiler directives". This is because those arguments
     //       are already covered by the timestamp of the main source file.
     immutable cacheDir = buildCachePath(compiler, mainSource, compilerArgsFromCommandLine);
-    auto output = determineOutput(cacheDir, userOptions, mainSource);
+    auto output = determineOutput(cacheDir, userOptions, mainFileOutputDir, mainSource);
     if (output.buildWitness)
         yapf("build witness %s", output.buildWitness.formatQuotedIfSpaces);
     else
@@ -451,11 +442,24 @@ int main(string[] args)
     }
 }
 
+// returns null if not a symlink, otherwise, returns the resolved symlink.
+// logs and exits on error
+string symlinkTarget(string file)
+{
+    version (Posix)
+    {
+        const attr = Chatty.getFileAttributes(file, No.resolveLink);
+        if (attr.isSymlink)
+            return followSymlink(file);
+    }
+    return null;
+}
+
 version (Posix)
 {
     // dmd does not allow source files to be passed in as links, so we must resolve them
     // assumption: filename is a symbolic link
-    string tryResolveSymlink(const(char)[] link)
+    string followSymlink(const(char)[] link)
     {
         auto next = link;
         for (;;)
@@ -465,7 +469,7 @@ version (Posix)
             if (!attr.exists)
             {
                 stderr.writefln("rund: Error: broken link '%s'", link);
-                return null;
+                exit(1);
             }
             if (!attr.isSymlink)
                 return cast(string)next;
@@ -487,8 +491,8 @@ struct Output
     the time of the binary can't be used to check for freshness
     because the user may change e.g. the compile option from one run
     to the next, yet the generated binary's datetime stays the
-    same. In those cases, we'll use a dedicated file called ".built"
-    and placed in cacheDir. Upon a successful build, ".built" will be
+    same. In those cases, we'll use a dedicated file called the "buildWitness"
+    put in the cacheDir. Upon a successful build, "buildWitness" will be
     touched. See also
     http://d.puremagic.com/issues/show_bug.cgi?id=4814
 
@@ -496,7 +500,7 @@ struct Output
     */
     string buildWitness;
 }
-Output determineOutput(string cacheDir, RundSpecificCompilerOptions userOptions, string mainSource)
+Output determineOutput(string cacheDir, RundSpecificCompilerOptions userOptions, string mainFileOutputDir, string mainSource)
 {
     string outExt;
     if (userOptions.lib)
@@ -516,18 +520,23 @@ Output determineOutput(string cacheDir, RundSpecificCompilerOptions userOptions,
         useBuildWitness = true;
         if (userOptions.outputFileOption)
         {
-            outputFile = buildPath(userOptions.outputDir,
+            outputFile = buildPath(userOptions.outputDir, mainFileOutputDir,
                 userOptions.outputFileOption.defaultExtension(outExt));
         }
         else
         {
-            outputFile = buildPath(userOptions.outputDir, mainSourceBaseName ~ outExt);
+            outputFile = buildPath(userOptions.outputDir, mainFileOutputDir, mainSourceBaseName ~ outExt);
         }
     }
     else if (userOptions.outputFileOption)
     {
         useBuildWitness = true;
-        outputFile = userOptions.outputFileOption.defaultExtension(outExt);
+        outputFile = buildPath(mainFileOutputDir, userOptions.outputFileOption.defaultExtension(outExt));
+    }
+    else if (mainFileOutputDir)
+    {
+        useBuildWitness = true;
+        outputFile = buildPath(mainFileOutputDir, mainSourceBaseName ~ outExt);
     }
     else
     {
@@ -637,16 +646,16 @@ private string buildCachePath(in string compiler, in string mainSource, in strin
 
     MD5 context;
     context.start();
-    yapf("[DEBUG] CACHE_PATH ADD '%s'", compiler);
+    yapf("cache_path hash '%s'", compiler);
     context.put(compiler.representation);
     auto mainSourceAbsoluteNormalized = mainSource.absolutePath.buildNormalizedPath;
-    yapf("[DEBUG] CACHE_PATH ADD '%s'", mainSourceAbsoluteNormalized);
+    yapf("cache_path hash '%s'", mainSourceAbsoluteNormalized);
     context.put(mainSourceAbsoluteNormalized.representation);
     foreach (flag; compilerArgs)
     {
         if (!irrelevantSwitches.canFind(flag))
         {
-            yapf("[DEBUG] CACHE_PATH ADD '%s'", flag);
+            yapf("cache_path hash '%s'", flag);
             context.put(flag.representation);
         }
     }

@@ -7,6 +7,9 @@
 
 module rund_test;
 
+import core.thread : Thread;
+import core.time : dur;
+
 import std.algorithm;
 import std.exception;
 import std.file;
@@ -64,7 +67,7 @@ int tryMain(string[] args)
 
     if (args.length > 2)
     {
-        writefln("Error: too many non-option arguments, expected 1 but got %s", args.length - 1);
+        errorf("too many non-option arguments, expected 1 but got %s", args.length - 1);
         return 1; // fail
     }
     string rund = args[1]; // path to rund executable
@@ -109,14 +112,24 @@ int tryMain(string[] args)
     return 0;
 }
 
+void logf(T...)(const(char)[] fmt, T args)
+{
+    write("[rund_test] ");
+    writefln(fmt, args);
+}
+void errorf(T...)(const(char)[] fmt, T args)
+{
+    write("[rund_test] Error: ");
+    writefln(fmt, args);
+}
 void rmdirRecurse(scope const(char)[] dir)
 {
-    writefln("rmRecurse '%s'", dir);
+    logf("rmRecurse '%s'", dir);
     std.file.rmdirRecurse(dir);
 }
 void chdir(R)(R pathname)
 {
-    writefln("cd '%s'", pathname);
+    logf("cd '%s'", pathname);
     std.file.chdir(pathname);
 }
 
@@ -131,7 +144,7 @@ auto addModelSwitch(string[] args, string model)
 
 auto execute(T)(T[] args)
 {
-    writefln("[rund_test] [execute] %s", escapeShellCommand(args));
+    logf("[execute] %s", escapeShellCommand(args));
     return std.process.execute(args);
 }
 
@@ -140,7 +153,7 @@ void enforceCanFind(const(char)[] text, const(char)[] expected)
     if (!text.canFind(expected))
     {
         writeln("------------------------------------------");
-        writefln("[rund_test] Error: the following text did not contain '%s'", expected);
+        errorf("the following text did not contain '%s'", expected);
         writeln("------------------------------------------");
         writeln(text);
         writeln("------------------------------------------");
@@ -152,7 +165,7 @@ void enforceCannotFind(const(char)[] text, const(char)[] expected)
     if (text.canFind(expected))
     {
         writeln("------------------------------------------");
-        writefln("[rund_test] Error: the following text SHOULD NOT contain '%s'", expected);
+        errorf("the following text SHOULD NOT contain '%s'", expected);
         writeln("------------------------------------------");
         writeln(text);
         writeln("------------------------------------------");
@@ -165,7 +178,7 @@ string execPass(T)(T[] args)
     const res = execute(args);
     if (res.status != 0)
     {
-        writefln("[rund_test] Error: the last command failed with exit code %s and with the following output:", res.status);
+        errorf("the last command failed with exit code %s and with the following output:", res.status);
         writeln("-----------------------------------------------------------");
         writeln(res.output);
         writeln("-----------------------------------------------------------");
@@ -178,13 +191,33 @@ string execFail(T)(T[] args)
     const res = execute(args);
     if (res.status == 0)
     {
-        writefln("[rund_test] Error: the last command should have failed but it passed with the following output:");
+        errorf("the last command should have failed but it passed with the following output:");
         writeln("-----------------------------------------------------------");
         writeln(res.output);
         writeln("-----------------------------------------------------------");
         throw new SilentException();
     }
     return res.output;
+}
+
+void enforce(T...)(bool condition, lazy const(char)[] fmt, lazy T args)
+{
+    if (!condition)
+    {
+        errorf(fmt, args);
+        throw new SilentException();
+    }
+}
+auto enforceExists(inout(char)[] file)
+{
+    enforce(exists(file), "file '%s' does not exist", file);
+    return file;
+}
+auto enforcedRemove(inout(char)[] file)
+{
+    remove(file);
+    enforce(!exists(file), "failed to remove file '%s'", file);
+    return file;
 }
 
 void runCompilerAgnosticTests(string rundApp, string model)
@@ -239,7 +272,69 @@ auto makeTempFile(string name, string contents)
     return filename;
 }
 
+auto makeFileWithRetry(string filename, string contents)
+{
+    // windows can have problems if you overwrite a file too fast, such
+    // as an executable file that was just running in a process
+    version (Windows)
+    {
+        import core.sys.windows.winerror : ERROR_SHARING_VIOLATION;
+        for (uint attempt = 1; ; attempt++)
+        {
+            try
+            {
+                std.file.write(filename, contents);
+                break;
+            }
+            catch(FileException e)
+            {
+                if (attempt < 4 && e.errno == ERROR_SHARING_VIOLATION)
+                {
+                    logf("caught FileException ERROR_SHARING_VIOLATION when creating '%s'...trying again", filename);
+                    continue;
+                }
+                throw e;
+            }
+        }
+    }
+    else
+    {
+        std.file.write(filename, contents);
+    }
+    return filename;
+}
+
+/*
+On my box I had cases where creating a file would not have a newer
+timestamp than the output files they were checked against.  This function
+will create a file and make sure that it has a newer timestamp than whatever
+the time currently is.
+
+An example where this is used is when we modify the output file to make it
+newer than the buildWitness.  I was getting cases where I'd modify the output file
+but it would have the SAME timestamp as the builtWitness...it was just going too fast!
+*/
+auto makeFileNewerThanNow(string filename, string contents)
+{
+    // first get the current time by creating the file empty and getting it's modify time
+    makeFileWithRetry(filename, "");
+    const now = timeLastModified(filename);
+
+    for (;;)
+    {
+        makeFileWithRetry(filename, contents);
+        const newTime = timeLastModified(filename);
+        if (newTime > now)
+            break;
+        logf("Timestamp of '%s' (%s) not updated. Creating again...", filename, now);
+        Thread.sleep(dur!"msecs"(1));
+    }
+}
+
+
 enum CompilingSourceMessage = "compiling source";
+enum PragmaPrintSource = `void main() { pragma(msg, "` ~ CompilingSourceMessage ~ `"); }`;
+
 struct TestFiles
 {
     string pragmaPrintCompilingSource;
@@ -249,8 +344,7 @@ struct TestFiles
     string hello;
     void create()
     {
-        pragmaPrintCompilingSource = makeTempFile("pragma_print.d",
-            `void main() { pragma(msg, "` ~ CompilingSourceMessage ~ `"); }`);
+        pragmaPrintCompilingSource = makeTempFile("pragma_print.d", PragmaPrintSource);
         voidMain = makeTempFile("void_main_.d", "void main() { }");
         failComptime = makeTempFile("fail_comptime_.d",
             "void main() { static assert(0); }");
@@ -465,14 +559,14 @@ void runTests(string rundApp, string compiler, string model)
 
     // -of doesn't append .exe on Windows: https://issues.dlang.org/show_bug.cgi?id=12149
     version (Windows)
-    {
+    {{
         auto outPath = buildPath(rundTempDir, "test_of_app");
         auto outExe = outPath ~ ".exe";
         if (exists(outExe))
             remove(outExe);
         execPass([rundApp, "--build-only", "-of" ~ outPath, testFiles.voidMain]);
-        enforce(exists(outExe));
-    }
+        outExe.enforceExists.enforcedRemove;
+    }}
 
     // Current directory change should not trigger rebuild
     execPass(rundArgs ~ [testFiles.pragmaPrintCompilingSource])
@@ -597,30 +691,85 @@ void runTests(string rundApp, string compiler, string model)
         execPass(rundArgs ~ ["--build-only", "--force", "-lib", "-od=" ~ altLibDir, srcName]);
         assert(exists(altLibDir.buildPath("test" ~ libExt)));
     }
+    // test that 'prog' works before and after creating binary in same directory
+    {
+        const src = "prog.d";
+        const outExe = "prog" ~ binExt;
+        const outObj = "prog" ~ objExt;
+        makeFileWithRetry(src, `void main() { }`);
+        execPass(rundArgs ~ ["-od=.", "prog"]);
+        outExe.enforceExists;
+        outObj.enforceExists;
+        execPass(rundArgs ~ ["-od=.", "prog"]);
+        outExe.enforcedRemove;
+        outObj.enforcedRemove;
+        src.enforcedRemove;
+    }
 
-    // Test with -of
+    // Test with -of and --od
     {
         TempDir srcDir = "rundTestSrc";
         TempDir libDir = "rundTestLib";
         TempDir binDir = "rundTestBin";
 
-        string srcName = srcDir.buildPath("test.d");
+        const srcName = buildPath(srcDir, "test.d");
         std.file.write(srcName, `void fun() {}`);
-        string libName = libDir.buildPath("libtest" ~ libExt);
+        const defaultOutFile = buildPath(libDir, "test" ~ libExt);
 
-        execPass(rundArgs ~ ["--build-only", "--force", "-lib", "-of" ~ libName, srcName]);
-        assert(exists(libName));
+        execPass(rundArgs ~ ["--build-only", "--force", "-lib", "--od=" ~ libDir, srcName]);
+        defaultOutFile.enforceExists.enforcedRemove;
 
-        // test that -of= works too
-        string altLibName = libDir.buildPath("altlibtest" ~ libExt);
+        const libOutFile = buildPath(libDir, "libtest" ~ libExt);
 
+        execPass(rundArgs ~ ["--build-only", "--force", "-lib", "--od=" ~ libDir, "-of=libtest", srcName]);
+        libOutFile.enforceExists.enforcedRemove;
+
+        execPass(rundArgs ~ ["--build-only", "--force", "-lib", "-of" ~ libOutFile, srcName]);
+        libOutFile.enforceExists.enforcedRemove;
+        const altLibName = libDir.buildPath("altlibtest" ~ libExt);
         execPass(rundArgs ~ ["--build-only", "--force", "-lib", "-of=" ~ altLibName, srcName]);
-        assert(exists(altLibName));
+        altLibName.enforceExists.enforcedRemove;
 
-        auto helloExe = binDir.buildPath("hello") ~ binExt;
+        auto helloExe = buildPath(binDir, "hello") ~ binExt;
+        execPass(rundArgs ~ ["--force", "--od=" ~ binDir, testFiles.hello])
+            .enforceCanFind("Hello!");
+        helloExe.enforceExists.enforcedRemove;
+        execPass(rundArgs ~ ["--force", "--od=" ~ binDir, "-of=hello", testFiles.hello])
+            .enforceCanFind("Hello!");
+        helloExe.enforceExists.enforcedRemove;
         execPass(rundArgs ~ ["--force", "-of=" ~ helloExe, testFiles.hello])
             .enforceCanFind("Hello!");
-        assert(exists(helloExe));
+        helloExe.enforceExists.enforcedRemove;
+    }
+
+    /*
+    Test that the build witness works
+    TODO: need to that these seven combinations of options use the build witness
+      1. -of=<file>
+      2. --od=<dir>
+      3. --od=<dir> --of=<file>
+      4. -od=<dir>
+      5. -od=<dir> -of=<file>
+      6. -od=<dir> --od=<dir>
+      7. -od=<dir> --od=<dir> --of=<file>
+    Note that using none of them MUST NOT use the build witness...that should be tested as well
+    */
+    {
+        enum tempPragmaPrintSrc = "pragma_print_temp.d";
+        enum outFile = "pragma_print_temp" ~ binExt;
+
+        std.file.write(tempPragmaPrintSrc, PragmaPrintSource);
+        execPass(rundArgs ~ ["--od=.", tempPragmaPrintSrc])
+            .enforceCanFind(CompilingSourceMessage);
+        outFile.enforceExists;
+        // Overwrite the out file
+        // this will cause the program to be rebuilt because
+        // the output file will be newer than the build witness
+        makeFileNewerThanNow(outFile, "an invalid binary!");
+        execPass(rundArgs ~ ["--od=.", tempPragmaPrintSrc])
+            .enforceCanFind(CompilingSourceMessage);
+        outFile.enforcedRemove;
+        tempPragmaPrintSrc.enforcedRemove;
     }
 
     /* rund --build-only --force -c main.d fails: ./main: No such file or directory: https://issues.dlang.org/show_bug.cgi?id=16962 */
@@ -693,6 +842,15 @@ void runTests(string rundApp, string compiler, string model)
         symlink(testFiles.hello, link1);
         execPass(rundArgs ~ [link1])
             .enforceCanFind("Hello!");
+        {
+            auto another_link = "hello_link";
+            if (exists(another_link))
+                another_link.enforcedRemove;
+            symlink(testFiles.hello, another_link);
+            execPass(rundArgs ~ [another_link])
+                .enforceCanFind("Hello!");
+            another_link.enforcedRemove;
+        }
         auto link2 = "hello_link2.d";
         if (exists(link2))
             remove(link2);
@@ -771,7 +929,7 @@ void runFallbackTest(string rundApp, string buildCompiler, string model)
        compiler (determined by the compiler used to build it) */
     if (exists(buildCompiler))
     {
-        writefln("Error: cannot create temporary compiler '%s' because it already exists", buildCompiler);
+        errorf("cannot create temporary compiler '%s' because it already exists", buildCompiler);
         throw new Exception("cannot create file");
     }
 
@@ -787,7 +945,7 @@ void runFallbackTest(string rundApp, string buildCompiler, string model)
         auto res = execute([rundApp].addModelSwitch(model) ~ ["-of=" ~ compilerFile, emptyMainFile]);
         if (res.status != 0)
         {
-            writefln("Error: failed to compile a psuedo compiler to %s", compilerFile.formatQuotedIfSpaces);
+            errorf("failed to compile a psuedo compiler to %s", compilerFile.formatQuotedIfSpaces);
             writeln("----------------------------------");
             writeln(res.output);
             writeln("----------------------------------");

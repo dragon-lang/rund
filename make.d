@@ -272,7 +272,7 @@ private void run(string command)
 
 void test(const(char)[] rundExe, string[] extraArgs)
 {
-    run(format("%s -g -debug %s %s %s%s",
+    run(format("%s %s %s %s%s",
         formatQuotedIfSpaces(rundExe),
         formatQuotedIfSpaces("-I" ~ getFilename("src")),
         getFilename("rund_test.d"),

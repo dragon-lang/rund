@@ -429,11 +429,15 @@ int main(string[] args)
     version (Windows)
     {
         // Windows doesn't have exec, fall back to spawnProcess then wait
+        if (chatty)
+            writeln("[SPAWN] ", escapeShellCommand(runCommand));
         auto pid = spawnProcess(runCommand);
         return pid.wait();
     }
     else
     {
+        if (chatty)
+            writeln("[EXEC] ", escapeShellCommand(runCommand));
         import std.process : execv;
         auto argv = runCommand.map!toStringz.chain(null.only).array;
         execv(argv[0], argv.ptr);

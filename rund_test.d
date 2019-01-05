@@ -22,6 +22,7 @@ import std.stdio;
 
 import rund.common;
 import rund.file;
+import rund.compiler;
 
 __gshared string rundTempDir;
 
@@ -91,10 +92,24 @@ int tryMain(string[] args)
     scope (success) std.file.remove(rundApp);
     copy(rund, rundApp, Yes.preserveAttributes);
 
-    runCompilerAgnosticTests(rundApp, model);
+    const helloExe = buildPath(rundTempDir, "helloWorld" ~ binExt);
+    execPass([rundApp].addModelSwitch(model) ~ ["--build-only", "-of=" ~ helloExe,
+        buildPath(__FILE_FULL_PATH__.dirName, "test", "helloWorld.d")]);
+    const dummyCompiler = buildPath(rundTempDir, "dummycompiler" ~ binExt);
+    execPass([rundApp].addModelSwitch(model) ~ ["--build-only", "-of=" ~ dummyCompiler,
+        buildPath(__FILE_FULL_PATH__.dirName, "test", "dummycompiler.d")]);
+
+    runCompilerAgnosticTests(rundApp, model, dummyCompiler);
 
     if (testCompilerList is null)
-        testCompilerList = "dmd";
+    {
+        testCompilerList = tryFindDCompilerInPath();
+        if (testCompilerList is null)
+        {
+            errorf("cannot find a D compiler");
+            return 1;
+        }
+    }
 
     // run the test suite for each specified test compiler
     foreach (testCompiler; testCompilerList.split(','))
@@ -142,10 +157,19 @@ auto addModelSwitch(string[] args, string model)
     return args;
 }
 
-auto execute(T)(T[] args)
+string envShellPrefix(const string[string] env)
 {
-    logf("[execute] %s", escapeShellCommand(args));
-    return std.process.execute(args);
+    string result = "";
+    foreach (pair; env.byKeyValue)
+    {
+        result ~= pair.key ~ "=" ~ pair.value ~ " ";
+    }
+    return result;
+}
+auto execute(scope const(char[])[] args, const string[string] env = null)
+{
+    logf("[execute] %s%s", envShellPrefix(env), escapeShellCommand(args));
+    return std.process.execute(args, env);
 }
 
 void enforceCanFind(const(char)[] text, const(char)[] expected)
@@ -173,9 +197,9 @@ void enforceCannotFind(const(char)[] text, const(char)[] expected)
     }
 }
 
-string execPass(T)(T[] args)
+auto execPass(scope const(char[])[] args, const string[string] env = null)
 {
-    const res = execute(args);
+    const res = execute(args, env);
     if (res.status != 0)
     {
         errorf("the last command failed with exit code %s and with the following output:", res.status);
@@ -186,9 +210,9 @@ string execPass(T)(T[] args)
     }
     return res.output;
 }
-string execFail(T)(T[] args)
+auto execFail(scope const(char[])[] args, const string[string] env = null)
 {
-    const res = execute(args);
+    const res = execute(args, env);
     if (res.status == 0)
     {
         errorf("the last command should have failed but it passed with the following output:");
@@ -220,7 +244,7 @@ auto enforcedRemove(inout(char)[] file)
     return file;
 }
 
-void runCompilerAgnosticTests(string rundApp, string model)
+void runCompilerAgnosticTests(string rundApp, string model, string dummyCompiler)
 {
     // Test help string output when no arguments passed.
     execFail([rundApp])
@@ -245,24 +269,36 @@ void runCompilerAgnosticTests(string rundApp, string model)
     execFail([rundApp, "-opbreak"]) // should not be treated like valid -op
         .enforceCanFind("Unrecognized option: -opbreak");
 
-    string compilerInHelp;
+    // check that rund can find all compilers
+    const rundArgsNoCompiler = rundArguments(rundApp, null, model);
     {
-        enum compilerHelpLine = "  --compiler=<comp>    use the specified compiler (default=";
-        auto offset = helpText.indexOf(compilerHelpLine);
-        assert(offset >= 0);
-        compilerInHelp = helpText[offset + compilerHelpLine.length .. $];
-        compilerInHelp = compilerInHelp[0 .. compilerInHelp.indexOf(')')];
+        auto tempBinDir = buildPath(rundTempDir, "tempbin");
+        mkdir(tempBinDir);
+        const tempFile = makeTempFile(buildPath(rundTempDir, "temp.d"), ``);
+        foreach (name; DCompilers)
+        {
+            runFallbackTest(rundApp, name, model);
+            const link = buildPath(tempBinDir, name);
+            version (Posix)
+                symlink(dummyCompiler, link);
+            else
+                copy(dummyCompiler, link);
+            execPass(rundArgsNoCompiler ~ [tempFile], [ "PATH": tempBinDir ])
+                .enforceCanFind("Running in dummy exe mode");
+            remove(link);
+        }
+        remove(tempFile);
     }
-
-    // run the fallback compiler test (this involves
-    // searching for the default compiler, so cannot
-    // be run with other test compilers)
-    runFallbackTest(rundApp, compilerInHelp, model);
 }
 
 auto rundArguments(string rundApp, string compiler, string model)
 {
-    return [rundApp, "--compiler=" ~ compiler].addModelSwitch(model);
+    auto args = [rundApp];
+    if (compiler)
+        args ~= ["--compiler=" ~ compiler];
+    if (model)
+        args = args.addModelSwitch(model);
+    return args;
 }
 
 auto makeTempFile(string name, string contents)
@@ -601,8 +637,7 @@ void runTests(string rundApp, string compiler, string model)
 
     {
         auto fullCompilerPath = which(compiler);
-        assert(compiler != fullCompilerPath, "TODO: FIX TEST HERE");
-
+        //assert(compiler != fullCompilerPath, "TODO: FIX TEST HERE");
         execPass([rundApp, "--compiler=" ~ fullCompilerPath, testFiles.pragmaPrintCompilingSource]);
     }
 
@@ -933,15 +968,11 @@ void runFallbackTest(string rundApp, string buildCompiler, string model)
         throw new Exception("cannot create file");
     }
 
-    auto compilerFile = buildPath(rundTempDir, buildCompiler);
+    auto compilerFile = buildPath(rundTempDir, buildCompiler ~ binExt);
     enum emptyMainFile = "emptymain.d";
     std.file.write(emptyMainFile, "int main(){return 0;}");
-    version(Windows)
     {
-        compilerFile ~= ".exe";
-    }
-    {
-        // create a "fake compiler" executable
+        // create a "dummy compiler" executable
         auto res = execute([rundApp].addModelSwitch(model) ~ ["-of=" ~ compilerFile, emptyMainFile]);
         if (res.status != 0)
         {

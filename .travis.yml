@@ -1,0 +1,12 @@
+language: generic
+git:
+  depth: false
+  submodules: false
+script:
+# install build library
+- git clone --depth=1 --branch=master https://github.com/dragon-lang/buildlib.git ../buildlib
+# Make sure our iso profiles work
+- ../buildlib/iso dmd-build
+- ../buildlib/iso ldc-build
+# Run the tests
+- ./test/test-with-nix

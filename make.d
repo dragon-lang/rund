@@ -13,6 +13,7 @@ import std.process : spawnShell, wait, environment, escapeShellCommand;
 
 import rund.common;
 import rund.file;
+import rund.compiler : tryFindDCompilerInPath;
 
 class SilentException : Exception { this() { super(null); } }
 
@@ -101,6 +102,12 @@ int tryMain(string[] args)
 
 string build()
 {
+    auto compiler = tryFindDCompilerInPath();
+    if (compiler is null)
+    {
+        writefln("Error: failed to find a D Compiler");
+        return null; // fail
+    }
     auto sourceFiles = [
          getFilename("rund.d"),
          getFilename("src", "rund", "common.d"),
@@ -109,6 +116,7 @@ string build()
          getFilename("src", "rund", "chatty.d"),
          getFilename("src", "rund", "deps.d"),
          getFilename("src", "rund", "directives.d"),
+         getFilename("src", "rund", "compiler.d"),
     ];
     auto targetExe = getFilename("bin", "rund" ~ binExt);
     auto targetModifyTime = timeLastModified(targetExe, SysTime.min);
@@ -128,7 +136,7 @@ string build()
     else
     {
         writefln("[make] building %s...", targetExe);
-        auto command = format("dmd -g -debug %s",
+        auto command = format("%s -g -debug %s", compiler,
             formatQuotedIfSpaces("-of=" ~ targetExe));
         foreach (sourceFile; sourceFiles)
         {
@@ -272,7 +280,7 @@ private void run(string command)
 
 void test(const(char)[] rundExe, string[] extraArgs)
 {
-    run(format("%s %s %s %s%s",
+    run(format("%s %s -g -debug %s %s%s",
         formatQuotedIfSpaces(rundExe),
         formatQuotedIfSpaces("-I" ~ getFilename("src")),
         getFilename("rund_test.d"),

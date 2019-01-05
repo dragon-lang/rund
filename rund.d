@@ -43,17 +43,9 @@ import rund.file;
 import rund.chatty;
 import rund.deps;
 import rund.directives;
+import rund.compiler;
 
 private string cacheDirOverride;
-
-version (DigitalMars)
-    private enum defaultCompiler = "dmd";
-else version (GNU)
-    private enum defaultCompiler = "gdmd";
-else version (LDC)
-    private enum defaultCompiler = "ldmd2";
-else
-    static assert(false, "Unknown compiler");
 
 void usage()
 {
@@ -66,7 +58,7 @@ by the first source file ending in ".d".
 Example: rund -release myprog.d -myprogarg 5
 
 In addition to all the compiler options, rund also recognizes:
-  --compiler=<comp>    use the specified compiler (default=` ~ defaultCompiler ~ `)
+  --compiler=<comp>    use the specified compiler
   --force              ignore prebuilt cache and build no matter what
   --chatty             print information about what rund is doing
   --build-only         build but do not run
@@ -253,21 +245,23 @@ int main(string[] args)
     {
         // Look for the D compiler in the same directory as rund
         // and fall back to using the one in your path otherwise.
-        auto compilerInSameDir = buildPath(dirName(thisExePath()), defaultCompiler);
-        if (Chatty.existsAsFile(compilerInSameDir))
+        foreach (candidate; DCompilers)
         {
-            compiler = compilerInSameDir;
-            yap("found compiler in same directory as rund: ", compiler);
-        }
-        else
-        {
-            compiler = Chatty.which(defaultCompiler);
-            if (compiler is null)
+            auto compilerInSameDir = buildPath(dirName(thisExePath()), candidate);
+            if (Chatty.existsAsFile(compilerInSameDir))
             {
-                writefln("Error: compiler '%s' was not found in PATH", defaultCompiler);
-                return 1;
+                compiler = compilerInSameDir;
+                yap("found compiler in same directory as rund: ", compiler);
             }
-            //compiler = defaultCompiler;
+        }
+    }
+    if (!compiler)
+    {
+        compiler = tryFindDCompilerInPath();
+        if (compiler is null)
+        {
+            writefln("Error: failed to find a dcompiler %s in the rund install directory or in PATH", DCompilers);
+            return 1;
         }
     }
 

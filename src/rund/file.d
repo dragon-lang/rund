@@ -123,3 +123,49 @@ string which(string path)
     }
     return null;
 }
+
+private immutable NoExtensions = [""];
+
+/**
+Search for multiple programs in PATH. Operates differently from `which` in
+that it doesn't check if program is itself a file, it only checks the candidates
+by appending it to each directory in PATH.
+*/
+string whichMultiple(T)(T programs)
+{
+    import std.algorithm : splitter;
+    import std.string : split;
+    import std.process : environment;
+    import std.path : pathSeparator, buildPath, extension;
+
+    string[] extensions = [""];
+    version(Windows)
+    {
+        // TODO: add a test that verifies this works correctly on windows
+        foreach (program; programs)
+        {
+             if (program.extension is null)
+             {
+                extensions ~= environment["PATHEXT"].split(pathSeparator);
+                // TODO: remove duplicate entries in extensions
+                break;
+             }
+        }
+    }
+
+    foreach (envPath; environment["PATH"].splitter(pathSeparator))
+    {
+        foreach (program; programs)
+        {
+            foreach (ext; (program.extension is null) ? extensions : NoExtensions)
+            {
+                string absPath = buildPath(envPath, program ~ ext);
+                if (getFileAttributes(absPath).isFile)
+                {
+                    return absPath;
+                }
+            }
+        }
+    }
+    return null;
+}

@@ -22,7 +22,7 @@ import core.stdc.stdlib : exit;
 
 import std.typecons : Flag, Yes, No;
 import std.exception : collectException, enforce;
-import std.algorithm : canFind, map, skipOver, splitter;
+import std.algorithm : canFind, map, skipOver, splitter, filter;
 import std.range : chain, only;
 import std.array : array, appender;
 static import std.string;
@@ -587,7 +587,12 @@ Flag!"compile" determineCompile(bool force, Output output, string jsonFilename, 
     // TODO: what happens if json modify time is different from outputFileTime and/or build witness time?
     auto deps = readJsonFile(jsonFilename, objDir);
 
-    auto updated = deps.byKey.anyNewerThan(lastBuildTime);
+    auto updated = deps.byKey
+        // Ignore the '__main.d' file, its a fake file that dmd adds to the
+        // list when the -main switch is specified.  It never actually exists
+        // so we cannot check its timestamp.
+        .filter!(dep => dep != "__main.d")
+        .anyNewerThan(lastBuildTime);
     if (updated)
     {
         yapf("COMPILE(YES) updated file '%s'", updated.formatQuotedIfSpaces);

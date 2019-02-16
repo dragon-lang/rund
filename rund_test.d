@@ -406,12 +406,23 @@ void runTests(string rundApp, string compiler, string model)
     // Test --force
     execPass(rundArgs ~ [testFiles.pragmaPrintCompilingSource])
         .enforceCanFind(CompilingSourceMessage);
-
     execPass(rundArgs ~ [testFiles.pragmaPrintCompilingSource])
         .enforceCannotFind(CompilingSourceMessage);  // second call will not re-compile
-
     execPass(rundArgs ~ ["--force", testFiles.pragmaPrintCompilingSource])
         .enforceCanFind(CompilingSourceMessage);  // force will re-compile
+
+    // Test works with -main.  This is a corner case since dmd will add the file '__main.d'
+    // but it doesn't exist afterwards, so rund needs to handle that file specially.
+    {
+        auto pragmaCompilingNoMain = makeTempFile("pragma_print_nomain.d", `pragma(msg, "` ~ CompilingSourceMessage ~ `");`);
+        scope (success) remove(pragmaCompilingNoMain);
+        execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
+            .enforceCanFind(CompilingSourceMessage);
+        execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
+            .enforceCannotFind(CompilingSourceMessage);  // second call will not re-compile
+        execPass(rundArgs ~ ["-main", "--force", pragmaCompilingNoMain])
+            .enforceCanFind(CompilingSourceMessage);  // force will re-compile
+    }
 
     // Test --build-only
     execPass(rundArgs ~ ["--force", "--build-only", testFiles.failRuntime]);

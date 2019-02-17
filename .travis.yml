@@ -8,5 +8,8 @@ script:
 # Make sure our iso profiles work
 - ../buildlib/iso dmd-build exit
 - ../buildlib/iso ldc-build exit
+# Set TMPDIR to /tmp because the default TMPDIR of /run/user/<UID> is noexec and
+# rund uses this to store executables
+- export TMPDIR=/tmp
 # Run the tests
 - ./test/test-with-nix

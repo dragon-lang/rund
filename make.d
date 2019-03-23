@@ -5,7 +5,7 @@ import std.algorithm : canFind, splitter;
 import std.array : Appender, appender;
 import std.string : startsWith, split;
 import std.format : format;
-import std.path : dirName, buildPath, relativePath, pathSeparator;
+import std.path : dirName, buildPath, relativePath, absolutePath, pathSeparator;
 import std.file : timeLastModified, isFile, exists, copy, FileException;
 import std.stdio : write, writeln, writefln, File;
 import std.datetime : SysTime;
@@ -18,6 +18,7 @@ import rund.compiler : tryFindDCompilerInPath;
 class SilentException : Exception { this() { super(null); } }
 
 __gshared string FILE_DIR = __FILE_FULL_PATH__.dirName;
+__gshared string outPath = null;
 string getFilename(C)(const(C)[][] paths...)
 {
     return relativePath(buildPath([cast(const(char)[])FILE_DIR] ~ paths));
@@ -30,6 +31,8 @@ void usage()
   make build
   make install <path>
   make test
+Options:
+  --out <path>
 `);
 }
 int main(string[] args)
@@ -58,9 +61,11 @@ int tryMain(string[] args)
         {
             auto arg = args[i];
             if (!arg.startsWith("-"))
-            {
                 args[newArgsLength++] = arg;
-            }
+	    else if (arg == "--out")
+	        // make sure it is absolute because it is used for
+		// both -of and -od
+	        outPath = nextArg(args, &i).absolutePath;
             else
             {
                 writefln("Error: unknown option '%s'", arg);
@@ -68,6 +73,8 @@ int tryMain(string[] args)
             }
         }
     }
+    if (outPath is null)
+        outPath = getFilename("bin");
 
     if(args.length == 0)
     {
@@ -118,7 +125,7 @@ string build()
          getFilename("src", "rund", "directives.d"),
          getFilename("src", "rund", "compiler.d"),
     ];
-    auto targetExe = getFilename("bin", "rund" ~ binExt);
+    auto targetExe = buildPath(outPath, "rund" ~ binExt);
     auto targetModifyTime = timeLastModified(targetExe, SysTime.min);
     bool needRebuild = false;
     foreach (sourceFile; sourceFiles)
@@ -136,8 +143,9 @@ string build()
     else
     {
         writefln("[make] building %s...", targetExe);
-        auto command = format("%s -g -debug %s", compiler,
-            formatQuotedIfSpaces("-of=" ~ targetExe));
+        auto command = format("%s -g -debug %s %s", compiler,
+            formatQuotedIfSpaces("-of=" ~ targetExe),
+            formatQuotedIfSpaces("-od=" ~ outPath));
         foreach (sourceFile; sourceFiles)
         {
             command ~= format(" %s", formatQuotedIfSpaces(sourceFile));

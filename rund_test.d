@@ -424,6 +424,23 @@ void runTests(string rundApp, string compiler, string model)
             .enforceCanFind(CompilingSourceMessage);  // force will re-compile
     }
 
+    // Test works when compiling a std library module
+    {
+        auto pragmaCompilingNoMain = makeTempFile("pragma_print_nomain.d", `module std.foo;pragma(msg, "` ~ CompilingSourceMessage ~ `");`);
+        scope (success) remove(pragmaCompilingNoMain);
+        execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
+            .enforceCanFind(CompilingSourceMessage);
+        execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
+            .enforceCannotFind(CompilingSourceMessage);  // second call will not re-compile
+        {
+            auto file = File(pragmaCompilingNoMain, "a");
+            file.write("\n// just adding something to force a recompile");
+            file.close();
+        }
+        execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
+            .enforceCanFind(CompilingSourceMessage);
+    }
+
     // Test --build-only
     execPass(rundArgs ~ ["--force", "--build-only", testFiles.failRuntime]);
     execFail(rundArgs ~ ["--force", testFiles.failRuntime]);

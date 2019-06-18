@@ -79,7 +79,10 @@ string[string] readJsonFile(string jsonFilename, string objDir)
                 bool ignoreAsDependency = false;
                 if (!nameNode.isNull)
                 {
-                    ignoreAsDependency = ignoreModuleAsDependency(nameNode.str, filenameProperty);
+                    const isRootNode = module_.object.get("isRoot", JSONValue.init);
+                    const isRoot = !isRootNode.isNull && isRootNode.boolean;
+                    if (!isRoot)
+                        ignoreAsDependency = ignoreModuleAsDependency(nameNode.str, filenameProperty);
                 }
                 if (!ignoreAsDependency)
                 {

@@ -48,6 +48,13 @@ Use an existing rund:
 ./make.d install
 ```
 
+#### Brew
+
+A brew formula is available via the tap `aliak00/dtap`. To install rund via brew you can run:
+```
+brew install aliak00/dtap/rund
+```
+
 # Source Compiler Directives
 
 rund supports "compiler directives" in the main source file.  Each directive line starts with `//!` and must appear at the beginning of the file but after the shebang line (i.e. `#!/usr/bin/env rund`) line if present.

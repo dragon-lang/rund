@@ -137,11 +137,51 @@ void errorf(T...)(const(char)[] fmt, T args)
     write("[rund_test] Error: ");
     writefln(fmt, args);
 }
+void remove(scope const(char)[] file)
+{
+    logf("remove file '%s'", file);
+    version (Windows)
+    {
+        for (int attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                std.file.remove(file);
+                break;
+            }
+            catch (FileException) { }
+            import core.thread;
+            Thread.sleep(100.msecs); // Hack around Windows locking the directory
+        }
+    }
+    else
+    {
+        std.file.remove(file);
+    }
+}
 void rmdirRecurse(scope const(char)[] dir)
 {
     logf("rmRecurse '%s'", dir);
-    std.file.rmdirRecurse(dir);
+    version (Windows)
+    {
+        for (int attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                std.file.rmdirRecurse(dir);
+                break;
+            }
+            catch (FileException) { }
+            import core.thread;
+            Thread.sleep(100.msecs); // Hack around Windows locking the directory
+        }
+    }
+    else
+    {
+        std.file.rmdirRecurse(dir);
+    }
 }
+
 void chdir(R)(R pathname)
 {
     logf("cd '%s'", pathname);
@@ -331,9 +371,10 @@ auto makeFileWithRetry(string filename, string contents)
             }
             catch(FileException e)
             {
-                if (attempt < 4 && e.errno == ERROR_SHARING_VIOLATION)
+                if (attempt <= 4 && e.errno == ERROR_SHARING_VIOLATION)
                 {
                     logf("caught FileException ERROR_SHARING_VIOLATION when creating '%s'...trying again", filename);
+                    Thread.sleep(dur!"msecs"(100));
                     continue;
                 }
                 throw e;
@@ -689,11 +730,6 @@ void runTests(string rundApp, string compiler, string model)
         @disable this(this);
         ~this()
         {
-            version (Windows)
-            {
-                import core.thread;
-                Thread.sleep(100.msecs); // Hack around Windows locking the directory
-            }
             rmdirRecurse(name);
         }
         alias name this;
@@ -704,15 +740,7 @@ void runTests(string rundApp, string compiler, string model)
         `if (exists(` ~ dirVarName ~ `)) rmdirRecurse(` ~ dirVarName ~ `);
         mkdir(` ~ dirVarName ~ `);
         // only remove on success
-        scope(success)
-        {
-            version (Windows)
-            {
-                import core.thread;
-                Thread.sleep(100.msecs); // Hack around Windows locking the directory
-            }
-            rmdirRecurse(` ~ dirVarName ~ `);
-        }
+        scope(success) rmdirRecurse(` ~ dirVarName ~ `);
 `;
     }
 
@@ -980,7 +1008,7 @@ SHELL = %s
                 "void main() { foofunc(); }");
             scope (success) std.file.remove(excludeImportsFile);
             execFail(rundArgs ~ [excludeImportsFile])
-                .enforceCanFind("undefined reference to")
+                .enforceCanFind("ndefined") // 'Undefined' or 'undefined'
                 .enforceCanFind("foofunc");
             const fooObjFile = "foo" ~ objExt;
             execPass(rundArgs ~ ["--build-only", "-c", "-of=" ~ fooObjFile, fooFile]);

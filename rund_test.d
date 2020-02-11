@@ -172,7 +172,7 @@ auto execute(scope const(char[])[] args, const string[string] env = null)
     return std.process.execute(args, env);
 }
 
-void enforceCanFind(const(char)[] text, const(char)[] expected)
+auto enforceCanFind(inout(char)[] text, const(char)[] expected)
 {
     if (!text.canFind(expected))
     {
@@ -183,6 +183,7 @@ void enforceCanFind(const(char)[] text, const(char)[] expected)
         writeln("------------------------------------------");
         throw new SilentException();
     }
+    return text;
 }
 void enforceCannotFind(const(char)[] text, const(char)[] expected)
 {
@@ -301,10 +302,16 @@ auto rundArguments(string rundApp, string compiler, string model)
     return args;
 }
 
-auto makeTempFile(string name, string contents)
+auto makeTempFile(string name, string[] contentLines...)
 {
+    auto contents = appender!(char[]);
+    foreach(line; contentLines)
+    {
+        contents.put(line);
+        contents.put("\n");
+    }
     auto filename = buildPath(rundTempDir, name);
-    std.file.write(filename, contents);
+    std.file.write(filename, contents.data);
     return filename;
 }
 
@@ -952,6 +959,36 @@ SHELL = %s
         assert(std.file.read(textOutput) == "hello world\n");
     }
     +/
+
+    // test includeImports directive
+    {
+        const fooFile = makeTempFile("foo.d", "import std.stdio; void foofunc() { writeln(\"called foofunc\"); }");
+        scope (success) std.file.remove(fooFile);
+        {
+            const excludeImportsFile = makeTempFile("excludeimports.d",
+                "import foo;",
+                "void main() { foofunc(); }");
+            scope (success) std.file.remove(excludeImportsFile);
+            execPass(rundArgs ~ [excludeImportsFile])
+                .enforceCanFind("called foofunc");
+        }
+        foreach (excludeString; ["-.", "-foo"])
+        {
+            const excludeImportsFile = makeTempFile("excludeimports.d",
+                "//!includeImports " ~ excludeString,
+                "import foo;",
+                "void main() { foofunc(); }");
+            scope (success) std.file.remove(excludeImportsFile);
+            execFail(rundArgs ~ [excludeImportsFile])
+                .enforceCanFind("undefined reference to")
+                .enforceCanFind("foofunc");
+            const fooObjFile = "foo" ~ objExt;
+            execPass(rundArgs ~ ["--build-only", "-c", "-of=" ~ fooObjFile, fooFile]);
+            scope (success) std.file.remove(fooObjFile);
+            execPass(rundArgs ~ [fooObjFile, excludeImportsFile])
+                .enforceCanFind("called foofunc");
+        }
+    }
 }
 
 void runConcurrencyTest(string rundApp, string compiler, string model)

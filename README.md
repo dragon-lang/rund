@@ -71,6 +71,7 @@ rund supports "compiler directives" in the main source file.  Each directive lin
 //!unittest
 //!debug
 //!debugSymbols
+//!includeImports <pattern>
 ```
 
 ### Test rund

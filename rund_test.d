@@ -474,7 +474,7 @@ void runTests(string rundApp, string compiler, string model)
 
     // Test works when compiling a std library module
     {
-        auto pragmaCompilingNoMain = makeTempFile("pragma_print_nomain.d", `module std.foo;pragma(msg, "` ~ CompilingSourceMessage ~ `");`);
+        auto pragmaCompilingNoMain = makeTempFile("pragma_print_nomain2.d", `module std.foo;pragma(msg, "` ~ CompilingSourceMessage ~ `");`);
         scope (success) remove(pragmaCompilingNoMain);
         execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
             .enforceCanFind(CompilingSourceMessage);

@@ -49,40 +49,44 @@ void processDirectivesFromReader(T, R)(T compiler, string sourceFilename, R line
     }
     for (;;)
     {
-        auto command = line;
-        if (!command.skipOver("//!"))
+        auto args = line;
+        if (!args.skipOver("//!"))
             return;
+        auto directive = peel(&args);
 
-        if (command.skipOver("importPath "))
+        if (directive == "importPath")
         {
-            auto path = fileRebaser.correctedPath(command);
+            auto path = fileRebaser.correctedPath(args);
             auto attr = getFileAttributes(path);
             if (!attr.exists)
                 throw new SourceDirectiveException(format("import path '%s' does not exist", path), sourceFilename, lineno);
             compiler.put("-I=" ~ path);
         }
-        else if (command.skipOver("importFilenamePath "))
-            compiler.put("-J=" ~ fileRebaser.correctedPath(command));
-        else if (command.skipOver("library "))
-            compiler.put(fileRebaser.correctedPath(command));
-        else if (command.skipOver("version "))
-            compiler.put("-version=" ~ command);
-        else if (command.skipOver("env "))
+        // require a pattern because rund will always include "-i" by default so there's not reason to -i without an argument
+        else if (directive == "includeImports")
+            compiler.put("-i=" ~ args);
+        else if (directive == "importFilenamePath")
+            compiler.put("-J=" ~ fileRebaser.correctedPath(args));
+        else if (directive == "library")
+            compiler.put(fileRebaser.correctedPath(args));
+        else if (directive == "version")
+            compiler.put("-version=" ~ args);
+        else if (directive == "env")
         {
-            auto indexOfEquals = command.indexOf('=');
+            auto indexOfEquals = args.indexOf('=');
             if (indexOfEquals < 0) throw new SourceDirectiveException(format(
                 "Error: compiler directive `%s` requires argument with format VAR=VALUE", line), sourceFilename, lineno);
-            environment[command[0 .. indexOfEquals]] = command[indexOfEquals + 1 .. $];
+            environment[args[0 .. indexOfEquals]] = args[indexOfEquals + 1 .. $];
         }
-        else if (command.skipOver("unittest"))
+        else if (directive == "unittest")
             compiler.put("-unittest");
-        else if (command.skipOver("betterC"))
+        else if (directive == "betterC")
             compiler.put("-betterC");
-        else if (command.skipOver("debugSymbols"))
+        else if (directive == "debugSymbols")
             compiler.put("-g");
-        else if (command.skipOver("debug"))
+        else if (directive == "debug")
             compiler.put("-debug");
-        else if (command.skipOver("noConfigFile"))
+        else if (directive == "noConfigFile")
             compiler.put("-conf=");
         else throw new SourceDirectiveException(format(
             "unknown compiler directive `%s`", line), sourceFilename, lineno);
@@ -90,6 +94,21 @@ void processDirectivesFromReader(T, R)(T compiler, string sourceFilename, R line
         line = lineReader();
         lineno++;
     }
+}
+
+T peel(T)(T* stringRef)
+{
+    import std.string : indexOf;
+
+    auto str = *stringRef;
+    auto spaceIndex = str.indexOf(' ');
+    if (spaceIndex == -1)
+    {
+        *stringRef = null;
+        return str;
+    }
+    *stringRef = str[spaceIndex + 1 .. $];
+    return str[0 .. spaceIndex];
 }
 
 auto stripNewline(inout(char)[] line)

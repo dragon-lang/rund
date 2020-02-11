@@ -137,11 +137,51 @@ void errorf(T...)(const(char)[] fmt, T args)
     write("[rund_test] Error: ");
     writefln(fmt, args);
 }
+void remove(scope const(char)[] file)
+{
+    logf("remove file '%s'", file);
+    version (Windows)
+    {
+        for (int attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                std.file.remove(file);
+                break;
+            }
+            catch (FileException) { }
+            import core.thread;
+            Thread.sleep(100.msecs); // Hack around Windows locking the directory
+        }
+    }
+    else
+    {
+        std.file.remove(file);
+    }
+}
 void rmdirRecurse(scope const(char)[] dir)
 {
     logf("rmRecurse '%s'", dir);
-    std.file.rmdirRecurse(dir);
+    version (Windows)
+    {
+        for (int attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                std.file.rmdirRecurse(dir);
+                break;
+            }
+            catch (FileException) { }
+            import core.thread;
+            Thread.sleep(100.msecs); // Hack around Windows locking the directory
+        }
+    }
+    else
+    {
+        std.file.rmdirRecurse(dir);
+    }
 }
+
 void chdir(R)(R pathname)
 {
     logf("cd '%s'", pathname);
@@ -172,7 +212,7 @@ auto execute(scope const(char[])[] args, const string[string] env = null)
     return std.process.execute(args, env);
 }
 
-void enforceCanFind(const(char)[] text, const(char)[] expected)
+auto enforceCanFind(inout(char)[] text, const(char)[] expected)
 {
     if (!text.canFind(expected))
     {
@@ -183,6 +223,7 @@ void enforceCanFind(const(char)[] text, const(char)[] expected)
         writeln("------------------------------------------");
         throw new SilentException();
     }
+    return text;
 }
 void enforceCannotFind(const(char)[] text, const(char)[] expected)
 {
@@ -301,10 +342,16 @@ auto rundArguments(string rundApp, string compiler, string model)
     return args;
 }
 
-auto makeTempFile(string name, string contents)
+auto makeTempFile(string name, string[] contentLines...)
 {
+    auto contents = appender!(char[]);
+    foreach(line; contentLines)
+    {
+        contents.put(line);
+        contents.put("\n");
+    }
     auto filename = buildPath(rundTempDir, name);
-    std.file.write(filename, contents);
+    std.file.write(filename, contents.data);
     return filename;
 }
 
@@ -324,9 +371,10 @@ auto makeFileWithRetry(string filename, string contents)
             }
             catch(FileException e)
             {
-                if (attempt < 4 && e.errno == ERROR_SHARING_VIOLATION)
+                if (attempt <= 4 && e.errno == ERROR_SHARING_VIOLATION)
                 {
                     logf("caught FileException ERROR_SHARING_VIOLATION when creating '%s'...trying again", filename);
+                    Thread.sleep(dur!"msecs"(100));
                     continue;
                 }
                 throw e;
@@ -426,7 +474,7 @@ void runTests(string rundApp, string compiler, string model)
 
     // Test works when compiling a std library module
     {
-        auto pragmaCompilingNoMain = makeTempFile("pragma_print_nomain.d", `module std.foo;pragma(msg, "` ~ CompilingSourceMessage ~ `");`);
+        auto pragmaCompilingNoMain = makeTempFile("pragma_print_nomain2.d", `module std.foo;pragma(msg, "` ~ CompilingSourceMessage ~ `");`);
         scope (success) remove(pragmaCompilingNoMain);
         execPass(rundArgs ~ ["-main", pragmaCompilingNoMain])
             .enforceCanFind(CompilingSourceMessage);
@@ -682,11 +730,6 @@ void runTests(string rundApp, string compiler, string model)
         @disable this(this);
         ~this()
         {
-            version (Windows)
-            {
-                import core.thread;
-                Thread.sleep(100.msecs); // Hack around Windows locking the directory
-            }
             rmdirRecurse(name);
         }
         alias name this;
@@ -697,15 +740,7 @@ void runTests(string rundApp, string compiler, string model)
         `if (exists(` ~ dirVarName ~ `)) rmdirRecurse(` ~ dirVarName ~ `);
         mkdir(` ~ dirVarName ~ `);
         // only remove on success
-        scope(success)
-        {
-            version (Windows)
-            {
-                import core.thread;
-                Thread.sleep(100.msecs); // Hack around Windows locking the directory
-            }
-            rmdirRecurse(` ~ dirVarName ~ `);
-        }
+        scope(success) rmdirRecurse(` ~ dirVarName ~ `);
 `;
     }
 
@@ -952,6 +987,36 @@ SHELL = %s
         assert(std.file.read(textOutput) == "hello world\n");
     }
     +/
+
+    // test includeImports directive
+    {
+        const fooFile = makeTempFile("foo.d", "import std.stdio; void foofunc() { writeln(\"called foofunc\"); }");
+        scope (success) std.file.remove(fooFile);
+        {
+            const excludeImportsFile = makeTempFile("excludeimports.d",
+                "import foo;",
+                "void main() { foofunc(); }");
+            scope (success) std.file.remove(excludeImportsFile);
+            execPass(rundArgs ~ [excludeImportsFile])
+                .enforceCanFind("called foofunc");
+        }
+        foreach (excludeString; ["-.", "-foo"])
+        {
+            const excludeImportsFile = makeTempFile("excludeimports.d",
+                "//!includeImports " ~ excludeString,
+                "import foo;",
+                "void main() { foofunc(); }");
+            scope (success) std.file.remove(excludeImportsFile);
+            execFail(rundArgs ~ [excludeImportsFile])
+                .enforceCanFind("ndefined") // 'Undefined' or 'undefined'
+                .enforceCanFind("foofunc");
+            const fooObjFile = "foo" ~ objExt;
+            execPass(rundArgs ~ ["--build-only", "-c", "-of=" ~ fooObjFile, fooFile]);
+            scope (success) std.file.remove(fooObjFile);
+            execPass(rundArgs ~ [fooObjFile, excludeImportsFile])
+                .enforceCanFind("called foofunc");
+        }
+    }
 }
 
 void runConcurrencyTest(string rundApp, string compiler, string model)

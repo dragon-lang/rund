@@ -86,6 +86,7 @@ int tryMain(string[] args)
     if (exists(rundTempDir))
         rmdirRecurse(rundTempDir);
     mkdir(rundTempDir);
+    scope (success) rmdirRecurse(rundTempDir);
     const rundApp = buildPath(rundTempDir, "rund_app_" ~ binExt);
     // don't remove rundApp on failure so that the user can
     // execute it

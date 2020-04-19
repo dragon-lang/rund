@@ -47,6 +47,9 @@ import rund.compiler;
 
 private string cacheDirOverride;
 
+// Pass --DRT-foo options to executed programs instead of consuming them for ourselves.
+extern(C) __gshared bool rt_cmdline_enabled = false;
+
 void usage()
 {
     writef(
